@@ -8,6 +8,8 @@ class Packet:
     payload: bytes
 
     def encode(self) -> bytes:
+        if len(self.payload) > MAX_PAYLOAD:
+            raise ValueError(f"Payload too large: {len(self.payload)}")
         length = len(self.payload).to_bytes(2, "big")
         body = bytes([self.cmd, self.seq]) + length + self.payload
         checksum = _checksum(body)
@@ -22,6 +24,8 @@ class Packet:
         cmd = data[2]
         seq = data[3]
         payload_len = int.from_bytes(data[4:6], "big")
+        if payload_len > MAX_PAYLOAD:
+            raise ValueError(f"Payload too large: {payload_len}")
         if len(data) < 6 + payload_len + 1:
             raise ValueError("Packet truncated")
         payload = data[6:6 + payload_len]
