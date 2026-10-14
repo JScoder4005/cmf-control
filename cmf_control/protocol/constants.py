@@ -8,7 +8,8 @@ CTRL_CRC = 0x20        # bit 5 — CRC present
 CTRL_MULTIFRAME = 0x40 # bit 6 — multi-frame
 
 # Device type nibble in control field (bits 8-11, shifted)
-DEVICE_TYPE_CORSOLA = 0  # CMF Buds Pro 2 (codename: corsola)
+# BudsLink sends 0x01 here (confirmed from nothingBudsSocket.js HEADER_MAGIC)
+DEVICE_TYPE_CORSOLA = 1  # CMF Buds Pro 2 (codename: corsola)
 
 # Command codes — verified from wi/v.java onUpdate() switch + am/s.java
 # Both request and response use same command code; control.bits[0:4] == 0 means request

@@ -12,7 +12,7 @@ Wire layout (all little-endian ints per q3.q helpers):
 """
 import struct
 from dataclasses import dataclass, field
-from cmf_control.protocol.constants import SOF, MAX_PAYLOAD, CTRL_CRC, DEVICE_TYPE_CORSOLA
+from cmf_control.protocol.constants import SOF, MAX_PAYLOAD, CTRL_CRC, CTRL_MULTIFRAME, DEVICE_TYPE_CORSOLA
 
 
 @dataclass
@@ -40,6 +40,7 @@ class Message:
         ctrl = self.rsp_code & 0x1F
         if self.crc:
             ctrl |= CTRL_CRC
+        ctrl |= CTRL_MULTIFRAME  # BudsLink always sets this (0x60 ctrl_lo)
         ctrl |= (self.device_type & 0xF) << 8
         header = struct.pack(
             "<BHHHB",
