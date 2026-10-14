@@ -27,6 +27,8 @@ def run() -> int:
     window = MainWindow(session)
     window.show()
 
-    ret = app.exec()
-    session.disconnect()
+    try:
+        ret = app.exec()
+    finally:
+        session.disconnect()
     return ret

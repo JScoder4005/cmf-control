@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton
 from PyQt6.QtCore import pyqtSignal
-from cmf_control.protocol.constants import ANC_OFF, ANC_TRANSPARENCY, ANC_LIGHT, ANC_MAX
 from cmf_control.features.anc import ANC_MODES
 
 class ANCToggle(QWidget):
