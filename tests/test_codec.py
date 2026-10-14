@@ -1,55 +1,75 @@
 import pytest
-from cmf_control.protocol.codec import Packet
-from cmf_control.protocol.constants import MAGIC, CMD_GET_BATTERY
+import struct
+from cmf_control.protocol.codec import Message, _crc16
+from cmf_control.protocol.constants import (
+    SOF, CMD_BATTERY, CMD_NOISE_REDUCTION, MAX_PAYLOAD, CTRL_CRC
+)
+
 
 def test_encode_roundtrip():
-    pkt = Packet(cmd=CMD_GET_BATTERY, seq=1, payload=bytes([0x01]))
-    encoded = pkt.encode()
-    decoded = Packet.decode(encoded)
-    assert decoded.cmd == pkt.cmd
-    assert decoded.seq == pkt.seq
-    assert decoded.payload == pkt.payload
+    msg = Message(command=CMD_BATTERY, payload=b"")
+    decoded = Message.decode(msg.encode())
+    assert decoded.command == msg.command
+    assert decoded.payload == msg.payload
+    assert decoded.is_request
 
-def test_encode_starts_with_magic():
-    pkt = Packet(cmd=CMD_GET_BATTERY, seq=0, payload=b"")
-    assert pkt.encode()[:2] == MAGIC
 
-def test_decode_bad_magic():
-    pkt = Packet(cmd=CMD_GET_BATTERY, seq=0, payload=b"").encode()
-    bad = b"\x00\x00" + pkt[2:]
-    with pytest.raises(ValueError, match="Bad magic"):
-        Packet.decode(bad)
+def test_encode_starts_with_sof():
+    msg = Message(command=CMD_BATTERY, payload=b"")
+    assert msg.encode()[0] == SOF
 
-def test_decode_bad_checksum():
-    pkt = Packet(cmd=CMD_GET_BATTERY, seq=0, payload=b"\x01").encode()
-    corrupted = pkt[:-1] + bytes([pkt[-1] ^ 0xFF])
-    with pytest.raises(ValueError, match="Checksum mismatch"):
-        Packet.decode(corrupted)
+
+def test_encode_with_payload_roundtrip():
+    payload = bytes([0x01, 0x01, 0x00])
+    msg = Message(command=CMD_NOISE_REDUCTION, payload=payload)
+    decoded = Message.decode(msg.encode())
+    assert decoded.command == CMD_NOISE_REDUCTION
+    assert decoded.payload == payload
+
+
+def test_decode_bad_sof():
+    data = Message(command=CMD_BATTERY).encode()
+    bad = bytes([0x00]) + data[1:]
+    with pytest.raises(ValueError, match="Bad SOF"):
+        Message.decode(bad)
+
+
+def test_decode_crc_mismatch():
+    data = bytearray(Message(command=CMD_BATTERY, payload=b"\x01").encode())
+    data[-1] ^= 0xFF
+    with pytest.raises(ValueError, match="CRC mismatch"):
+        Message.decode(bytes(data))
+
 
 def test_decode_too_short():
     with pytest.raises(ValueError, match="too short"):
-        Packet.decode(b"\xAA\xBB\x05")
+        Message.decode(bytes([SOF, 0x20, 0x00]))
+
 
 def test_empty_payload():
-    pkt = Packet(cmd=0x05, seq=0, payload=b"")
-    assert Packet.decode(pkt.encode()).payload == b""
+    msg = Message(command=CMD_BATTERY, payload=b"")
+    assert Message.decode(msg.encode()).payload == b""
+
 
 def test_decode_truncated_payload():
-    # payload_len says 5 bytes but only 2 present
-    import struct
-    data = bytes([0xAA, 0xBB, 0x05, 0x00]) + (5).to_bytes(2, "big") + bytes([0x01, 0x02])
+    # claim 5 bytes payload but provide only 2
+    header = struct.pack("<BHHHB", SOF, CTRL_CRC, CMD_BATTERY, 5, 0)
     with pytest.raises(ValueError, match="truncated"):
-        Packet.decode(data)
+        Message.decode(header + bytes([0x01, 0x02]))
+
 
 def test_encode_payload_too_large():
-    from cmf_control.protocol.constants import MAX_PAYLOAD
     with pytest.raises(ValueError, match="too large"):
-        Packet(cmd=0x05, seq=0, payload=bytes(MAX_PAYLOAD + 1)).encode()
+        Message(command=CMD_BATTERY, payload=bytes(MAX_PAYLOAD + 1)).encode()
 
-def test_decode_payload_too_large():
-    from cmf_control.protocol.constants import MAX_PAYLOAD
-    # craft a packet claiming 513 bytes payload
-    payload_len = MAX_PAYLOAD + 1
-    data = bytes([0xAA, 0xBB, 0x05, 0x00]) + payload_len.to_bytes(2, "big") + bytes(payload_len + 1)
-    with pytest.raises(ValueError, match="too large"):
-        Packet.decode(data)
+
+def test_crc16_known_value():
+    # CRC-16/ARC of empty bytes: 0xFFFF
+    assert _crc16(b"") == 0xFFFF
+
+
+def test_wire_size():
+    msg = Message(command=CMD_BATTERY, payload=b"\x01\x02", crc=True)
+    assert len(msg.encode()) == msg.wire_size
+    msg_nocrc = Message(command=CMD_BATTERY, payload=b"\x01\x02", crc=False)
+    assert len(msg_nocrc.encode()) == msg_nocrc.wire_size

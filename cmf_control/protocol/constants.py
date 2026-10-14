@@ -1,30 +1,98 @@
-# Packet framing
-MAGIC = bytes([0xAA, 0xBB])
+# Packet framing — verified from APK decompilation (Message.java)
+# SOF=0x55, control(2), command(2), length(2), fsn(1), payload(n), crc(2 if crc bit set)
+SOF = 0x55
 MAX_PAYLOAD = 512
 
-# Commands (to-device)
-CMD_GET_BATTERY   = 0x05
-CMD_SET_ANC       = 0x06
-CMD_GET_ANC       = 0x07
-CMD_SET_EQ        = 0x08
-CMD_GET_EQ        = 0x09
-CMD_SET_GESTURE   = 0x0A
-CMD_GET_GESTURE   = 0x0B
+# Control field flags
+CTRL_CRC = 0x20        # bit 5 — CRC present
+CTRL_MULTIFRAME = 0x40 # bit 6 — multi-frame
 
-# ANC modes
-ANC_OFF          = 0x00
-ANC_TRANSPARENCY = 0x01
-ANC_LIGHT        = 0x02
-ANC_MAX          = 0x03
+# Device type nibble in control field (bits 8-11, shifted)
+DEVICE_TYPE_CORSOLA = 0  # CMF Buds Pro 2 (codename: corsola)
 
-# EQ presets
-EQ_BALANCED      = 0x00
-EQ_BASS_BOOST    = 0x01
-EQ_TREBLE_BOOST  = 0x02
-EQ_PODCAST       = 0x03
-EQ_GAMING        = 0x04
+# Command codes — verified from wi/v.java onUpdate() switch + am/s.java
+# Both request and response use same command code; control.bits[0:4] == 0 means request
+CMD_DEVICE_CONFIG      = 0xC006  # serial number, config (response: DeviceConfiguration)
+CMD_BATTERY            = 0xC007  # battery levels (request: no payload; response: DeviceBattery)
+CMD_IN_EAR_DETECTION   = 0xC00E  # wear detect enable/disable
+CMD_NOISE_REDUCTION    = 0xC01E  # ANC / noise reduction set+get
+CMD_EQ_PRESET          = 0xC01F  # EQ preset index set+get
+CMD_PERSONALIZED_ANC   = 0xC020  # personalised ANC
+CMD_LOW_LATENCY        = 0xC041  # game/low-latency mode
+CMD_FIRMWARE_VERSION   = 0xC001  # request firmware version
+CMD_FIRMWARE_VERSION_R = 0xC042  # firmware version response/notify
+CMD_BATTERY_NOTIFY     = 0xE001  # unsolicited battery notification (same data as C007)
+CMD_NOISE_NOTIFY       = 0xE003  # unsolicited ANC state notification
 
-# Gesture actions
+# BLE service UUID — AEAC4A03-DFF5-498F-843A-34487CF133EB (cm/a.java)
+SERVICE_UUID = "AEAC4A03-DFF5-498F-843A-34487CF133EB"
+
+# OTA firmware RFCOMM UUID — 66666666-6666-6666-6666-666666666666 (ul/g.java)
+OTA_UUID = "66666666-6666-6666-6666-666666666666"
+
+# ANC / noise reduction modes — verified from DeviceNoiseReduction.java
+# Payload format: repeated 3-byte tuples (type, value, none)
+# type 1 = NOISE_REDUCTION_MODE, type 2 = NOISE_REDUCTION_LEVEL
+ANC_MODE_STRONG        = 1    # value=1 (strong ANC)
+ANC_MODE_MEDIUM        = 2    # value=2
+ANC_MODE_WEAK          = 3    # value=3
+ANC_MODE_SMART_1       = 4    # value=253 (0xFD)
+ANC_MODE_OFF           = 5    # value=0
+ANC_MODE_COMFORTABLE   = 6    # value=255 (0xFF)
+ANC_MODE_PASS_THROUGH  = 7    # value=254 (0xFE)
+ANC_MODE_SMART_2       = 8    # value=252 (0xFC)
+
+# ANC encoded values (byte sent in payload)
+ANC_VAL_OFF            = 0x00
+ANC_VAL_SMART_2        = 0xFC
+ANC_VAL_SMART_1        = 0xFD
+ANC_VAL_PASS_THROUGH   = 0xFE
+ANC_VAL_COMFORTABLE    = 0xFF
+ANC_VAL_STRONG         = 0x01  # range 1-127 for ANC levels
+ANC_VAL_RANGE_MIN      = 1
+ANC_VAL_RANGE_MAX      = 127
+
+# EQ presets — verified from wi/v.java onUpdate() case 49183 (=0xC01F)
+# Payload: single int (0-5)
+EQ_BALANCED      = 0   # "sound_balanced"
+EQ_MORE_VOICE    = 1   # "sound_more_voice"
+EQ_MORE_TREBLE   = 2   # "sound_more_treble"
+EQ_MORE_BASS     = 3   # "sound_more_bass"
+EQ_CUSTOM        = 5   # "sound_eq_custom"
+
+# Battery payload — DeviceBattery.java
+# SparseArray keyed by: 1=watch, 2=left, 3=right, 4=case, 5=tws, 6=stereo
+BATT_KEY_WATCH  = 1
+BATT_KEY_LEFT   = 2
+BATT_KEY_RIGHT  = 3
+BATT_KEY_CASE   = 4
+BATT_KEY_TWS    = 5
+BATT_KEY_STEREO = 6
+BATT_LEVEL_MASK    = 0x7F  # lower 7 bits = level
+BATT_CHARGING_MASK = 0x80  # bit 7 = charging
+
+# Backward-compat aliases (old names used in feature modules / tests)
+CMD_GET_BATTERY    = CMD_BATTERY
+CMD_GET_ANC        = CMD_NOISE_REDUCTION
+CMD_SET_ANC        = CMD_NOISE_REDUCTION
+CMD_GET_EQ         = CMD_EQ_PRESET
+CMD_SET_EQ         = CMD_EQ_PRESET
+CMD_GET_GESTURE    = 0xC030  # not yet verified
+CMD_SET_GESTURE    = 0xC031  # not yet verified
+
+# Old ANC mode names mapped to verified values
+ANC_OFF          = ANC_VAL_OFF
+ANC_TRANSPARENCY = ANC_VAL_PASS_THROUGH
+ANC_LIGHT        = ANC_VAL_STRONG        # approximate
+ANC_MAX          = ANC_VAL_STRONG        # approximate — strong=1..127
+
+# Old EQ names
+EQ_BASS_BOOST    = EQ_MORE_BASS
+EQ_TREBLE_BOOST  = EQ_MORE_TREBLE
+EQ_PODCAST       = EQ_MORE_VOICE         # closest match
+EQ_GAMING        = EQ_BALANCED           # no direct equivalent
+
+# Gesture actions (not yet verified — still unconfirmed)
 GESTURE_NONE         = 0x00
 GESTURE_PLAY_PAUSE   = 0x01
 GESTURE_NEXT_TRACK   = 0x02
@@ -34,7 +102,7 @@ GESTURE_VOLUME_DOWN  = 0x05
 GESTURE_ANC_TOGGLE   = 0x06
 GESTURE_VOICE_ASSIST = 0x07
 
-# Gesture positions (which tap type on which bud)
+# Gesture positions (not yet verified)
 GESTURE_LEFT_SINGLE  = 0x10
 GESTURE_LEFT_DOUBLE  = 0x11
 GESTURE_LEFT_TRIPLE  = 0x12
