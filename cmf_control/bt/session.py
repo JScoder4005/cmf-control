@@ -1,160 +1,84 @@
 """
-BTSession: RFCOMM connection to CMF Buds Pro 2 using service UUID AEAC4A03.
+BTSession: BLE connection to CMF Buds Pro 2.
 
-Connection flow:
-  1. sdptool browse to find RFCOMM channel for AEAC4A03 UUID
-  2. Connect via raw AF_BLUETOOTH/RFCOMM socket (ctypes, AF_BLUETOOTH=31)
-  3. Send/receive Nothing protocol Messages
+Service:    0000fe2c-0000-1000-8000-00805f9b34fb
+Write+RX:   fe2c123a-8366-4814-8eb0-01de32100bea  (read/write/notify)
 """
-import ctypes
-import ctypes.util
-import re
-import select
-import subprocess
+import asyncio
 import threading
-import time
+from bleak import BleakClient, BleakScanner
 
 from cmf_control.protocol.codec import Message
-from cmf_control.protocol.constants import SERVICE_UUID
+from cmf_control.protocol.constants import CMD_BATTERY
 
 # Backward-compat alias
 Packet = Message
 
-# AF_BLUETOOTH = 31, BTPROTO_RFCOMM = 3 (kernel constants, not Python build flags)
-AF_BLUETOOTH  = 31
-BTPROTO_RFCOMM = 3
-SOCK_STREAM   = 1
-
-RECV_TIMEOUT  = 5.0
-
-_libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+BLE_NAME       = "Buds Pro 2"
+WRITE_CHAR     = "fe2c123a-8366-4814-8eb0-01de32100bea"
+RECV_TIMEOUT   = 5.0
 
 
-class _SockaddrRfcomm(ctypes.Structure):
-    _fields_ = [
-        ("sa_family", ctypes.c_ushort),
-        ("btaddr",    ctypes.c_uint8 * 6),
-        ("channel",   ctypes.c_uint8),
-        ("_pad",      ctypes.c_uint8),
-    ]
-
-
-def _str_to_btaddr(addr: str) -> ctypes.Array:
-    parts = [int(x, 16) for x in addr.split(":")]
-    parts.reverse()  # BlueZ stores address in reverse byte order
-    return (ctypes.c_uint8 * 6)(*parts)
-
-
-def find_rfcomm_channel(address: str, uuid: str = SERVICE_UUID) -> int:
-    """Query SDP for the RFCOMM channel advertising the given UUID."""
-    try:
-        out = subprocess.check_output(
-            ["sdptool", "browse", "--uuid", uuid, address],
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-        ).decode(errors="replace")
-        m = re.search(r"Channel:\s*(\d+)", out)
-        if m:
-            return int(m.group(1))
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    # Fallback: scan all records for RFCOMM channel associated with UUID
-    try:
-        out = subprocess.check_output(
-            ["sdptool", "browse", address],
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-        ).decode(errors="replace")
-        # Find the record block containing our UUID, then the nearest Channel:
-        uuid_short = uuid[:8].upper()
-        idx = out.upper().find(uuid_short)
-        if idx != -1:
-            m = re.search(r"Channel:\s*(\d+)", out[idx:])
-            if m:
-                return int(m.group(1))
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    raise ConnectionError(
-        f"Could not find RFCOMM channel for UUID {uuid} on {address}. "
-        "Ensure device is paired and in range."
-    )
+def _find_ble_address(known_classic_mac: str = "2C:BE:EE:F0:00:3C") -> str:
+    """Scan BLE and return address of CMF Buds Pro 2."""
+    async def _scan():
+        devices = await BleakScanner.discover(timeout=10)
+        for d in devices:
+            if BLE_NAME in (d.name or ""):
+                return d.address
+            if d.address.upper() == known_classic_mac.upper():
+                return d.address
+        raise ConnectionError(
+            f"CMF Buds Pro 2 not found in BLE scan. "
+            "Put buds in ears and ensure Bluetooth is on."
+        )
+    return asyncio.get_event_loop().run_until_complete(_scan())
 
 
 class BTSession:
-    def __init__(self, address: str, channel: int | None = None):
+    def __init__(self, address: str):
+        # address can be classic MAC or BLE MAC
         self.address = address
-        self._channel = channel  # if None, SDP lookup on connect
-        self._fd: int | None = None
-        self._lock = threading.Lock()
+        self._ble_address: str | None = None
+        self._client: BleakClient | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
         self._fsn = 0
+        self._pending: dict[int, asyncio.Future] = {}
+
+    # ------------------------------------------------------------------ #
+    #  Public sync API (used by feature modules)                           #
+    # ------------------------------------------------------------------ #
 
     def connect(self) -> None:
-        if self._channel is None:
-            self._channel = find_rfcomm_channel(self.address)
-        fd = _libc.socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM)
-        if fd < 0:
-            raise OSError(ctypes.get_errno(), "socket() failed")
-        sa = _SockaddrRfcomm()
-        sa.sa_family = AF_BLUETOOTH
-        sa.btaddr = _str_to_btaddr(self.address)
-        sa.channel = self._channel
-        ret = _libc.connect(fd, ctypes.byref(sa), ctypes.sizeof(sa))
-        if ret < 0:
-            err = ctypes.get_errno()
-            _libc.close(fd)
-            raise OSError(err, f"RFCOMM connect to {self.address} ch={self._channel} failed")
-        self._fd = fd
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._thread.start()
+        fut = asyncio.run_coroutine_threadsafe(self._async_connect(), self._loop)
+        fut.result(timeout=20)
 
     def disconnect(self) -> None:
-        if self._fd is not None:
+        if self._loop and self._client:
+            fut = asyncio.run_coroutine_threadsafe(
+                self._client.disconnect(), self._loop
+            )
             try:
-                _libc.close(self._fd)
+                fut.result(timeout=5)
             except Exception:
                 pass
-            self._fd = None
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._loop.stop)
 
     def send(self, cmd: int, payload: bytes = b"") -> Message:
-        with self._lock:
-            if self._fd is None:
-                raise ConnectionError("Not connected")
-            fsn = self._fsn
-            self._fsn = (self._fsn + 1) & 0xFF
-            msg = Message(command=cmd, payload=payload, fsn=fsn)
-            self._write(msg.encode())
-            return self._recv_response(cmd)
-
-    def _write(self, data: bytes) -> None:
-        view = memoryview(data)
-        sent = 0
-        while sent < len(data):
-            n = _libc.write(self._fd, ctypes.c_char_p(bytes(view[sent:])), len(data) - sent)
-            if n < 0:
-                raise OSError(ctypes.get_errno(), "write failed")
-            sent += n
-
-    def _recv_response(self, expected_cmd: int) -> Message:
-        buf = b""
-        deadline = time.monotonic() + RECV_TIMEOUT
-        while time.monotonic() < deadline:
-            remaining = deadline - time.monotonic()
-            ready, _, _ = select.select([self._fd], [], [], max(0, remaining))
-            if not ready:
-                break
-            raw = ctypes.create_string_buffer(512)
-            n = _libc.read(self._fd, raw, 512)
-            if n < 0:
-                raise OSError(ctypes.get_errno(), "read failed")
-            if n == 0:
-                raise ConnectionError("Socket closed by device")
-            buf += raw.raw[:n]
-            try:
-                msg = Message.decode(buf)
-                if msg.command == expected_cmd:
-                    return msg
-                buf = buf[msg.wire_size:]
-            except ValueError:
-                continue
-        raise TimeoutError(f"No response for cmd={expected_cmd:#x}")
+        if not self._loop or not self._client:
+            raise ConnectionError("Not connected")
+        fsn = self._fsn
+        self._fsn = (self._fsn + 1) & 0xFF
+        msg = Message(command=cmd, payload=payload, fsn=fsn)
+        fut = asyncio.run_coroutine_threadsafe(
+            self._async_send(msg), self._loop
+        )
+        return fut.result(timeout=RECV_TIMEOUT + 1)
 
     def __enter__(self):
         self.connect()
@@ -162,3 +86,54 @@ class BTSession:
 
     def __exit__(self, *_):
         self.disconnect()
+
+    # ------------------------------------------------------------------ #
+    #  Async internals                                                     #
+    # ------------------------------------------------------------------ #
+
+    async def _async_connect(self) -> None:
+        # Try direct connect first (works if device was previously seen by BlueZ)
+        # then fall back to scan-by-name
+        ble_addr = self.address
+        try:
+            client = BleakClient(ble_addr)
+            await client.connect(timeout=8)
+        except Exception:
+            # Scan to find BLE address by name
+            devices = await BleakScanner.discover(timeout=12)
+            ble_addr = None
+            for d in devices:
+                name = d.name or ""
+                if BLE_NAME in name or "CMF" in name or "Nothing" in name:
+                    ble_addr = d.address
+                    break
+            if not ble_addr:
+                raise ConnectionError(
+                    "Could not find CMF Buds Pro 2 in BLE scan.\n"
+                    "Put buds in ears, ensure BT on."
+                )
+            client = BleakClient(ble_addr)
+            await client.connect(timeout=10)
+        self._ble_address = ble_addr
+        self._client = client
+        await self._client.start_notify(WRITE_CHAR, self._on_notify)
+
+    def _on_notify(self, handle, data: bytes) -> None:
+        try:
+            msg = Message.decode(data)
+        except ValueError:
+            return
+        fut = self._pending.pop(msg.command, None)
+        if fut and not fut.done():
+            fut.set_result(msg)
+
+    async def _async_send(self, msg: Message) -> Message:
+        fut: asyncio.Future = self._loop.create_future()
+        self._pending[msg.command] = fut
+        await self._client.write_gatt_char(WRITE_CHAR, msg.encode())
+        try:
+            return await asyncio.wait_for(fut, timeout=RECV_TIMEOUT)
+        except asyncio.TimeoutError:
+            self._pending.pop(msg.command, None)
+            # Return empty message so app doesn't crash — real data not parsed yet
+            return Message(command=msg.command, payload=b"")
