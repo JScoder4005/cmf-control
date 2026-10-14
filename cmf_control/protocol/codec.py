@@ -7,6 +7,11 @@ class Packet:
     seq: int
     payload: bytes
 
+    @property
+    def wire_size(self) -> int:
+        """Total encoded size: 2 (MAGIC) + 1 (CMD) + 1 (SEQ) + 2 (LEN) + payload + 1 (CHECKSUM)."""
+        return 7 + len(self.payload)
+
     def encode(self) -> bytes:
         if len(self.payload) > MAX_PAYLOAD:
             raise ValueError(f"Payload too large: {len(self.payload)}")

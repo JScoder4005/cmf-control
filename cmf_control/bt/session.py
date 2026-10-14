@@ -54,7 +54,7 @@ class BTSession:
                 pkt = Packet.decode(buf)
                 if pkt.seq == expected_seq:
                     return pkt
-                buf = buf[7 + len(pkt.payload):]
+                buf = buf[pkt.wire_size:]
             except ValueError:
                 continue
         raise TimeoutError(f"No response for seq={expected_seq}")
