@@ -95,11 +95,15 @@ class BTSession:
               if not self._fd_future.done() else None
         )
 
-        mgr = dbus.Interface(
+        self._mgr = dbus.Interface(
             self._bus.get_object("org.bluez", "/org/bluez"),
             "org.bluez.ProfileManager1",
         )
-        mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
+        try:
+            self._mgr.UnregisterProfile(PROFILE_PATH)
+        except Exception:
+            pass  # not registered yet — fine
+        self._mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
             "Name": dbus.String("CMF Control"),
             "Role": dbus.String("client"),
             "AutoConnect": dbus.Boolean(False),
@@ -127,6 +131,11 @@ class BTSession:
             except OSError:
                 pass
             self._fd = None
+        if hasattr(self, '_mgr') and self._mgr:
+            try:
+                self._mgr.UnregisterProfile(PROFILE_PATH)
+            except Exception:
+                pass
         if self._mainloop and self._mainloop.is_running():
             self._mainloop.quit()
 
