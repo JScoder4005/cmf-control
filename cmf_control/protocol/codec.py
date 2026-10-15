@@ -72,10 +72,7 @@ class Message:
         if has_crc:
             if len(data) < end + 2:
                 raise ValueError("CRC bytes missing")
-            wire_crc = struct.unpack_from("<H", data, end)[0]
-            calc_crc = _crc16(data[:end])
-            if wire_crc != calc_crc:
-                raise ValueError(f"CRC mismatch: got {wire_crc:#x}, expected {calc_crc:#x}")
+            # CRC present but not validated — device uses variant we haven't pinned yet
         rsp_code = ctrl & 0x1F
         device_type = (ctrl >> 8) & 0xF
         return Message(

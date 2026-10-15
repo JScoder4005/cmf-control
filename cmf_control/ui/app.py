@@ -36,7 +36,7 @@ def run() -> int:
     splash.show()
     app.processEvents()
 
-    session = BTSession("61:12:9A:45:F5:5F")  # BLE MAC (BlueZ resolves from paired device)
+    session = BTSession("2C:BE:EE:F0:00:3C")  # classic BT MAC — RFCOMM via BlueZ
     result = {}
 
     thread = ConnectThread(session)

@@ -1,74 +1,144 @@
 """
-BTSession: BLE GATT connection to CMF Buds Pro 2.
+BTSession: RFCOMM connection to CMF Buds Pro 2 via BlueZ D-Bus profile.
 
-Service:  0000fe2c-0000-1000-8000-00805f9b34fb
-TX char:  fe2c1236 [write] or fe2c123a [write,notify]
-RX char:  fe2c1235 [notify] — device sends responses here
+BlueZ profile flow (mirrors BudsLink):
+  1. Register Profile1 D-Bus object
+  2. Call org.bluez.ProfileManager1.RegisterProfile
+  3. Call org.bluez.Device1.ConnectProfile(uuid)
+  4. BlueZ calls NewConnection(device, fd, props) with RFCOMM fd
+  5. Read/write fd directly
 
-Note: BudsLink uses RFCOMM but requires system Python (gi/dbus).
-This implementation uses bleak (pure Python, pyenv-compatible).
+Requires system Python with dbus-python + PyGObject (gi).
+Run with: /usr/bin/python3
+
+UUID: aeac4a03-dff5-498f-843a-34487cf133eb
 """
-import asyncio
+import os
+import select
 import threading
-from bleak import BleakClient, BleakScanner
+import time
+from concurrent.futures import Future
+
+try:
+    import dbus
+    import dbus.service
+    import dbus.mainloop.glib
+    from gi.repository import GLib
+    _DBUS_AVAILABLE = True
+except ImportError:
+    _DBUS_AVAILABLE = False
 
 from cmf_control.protocol.codec import Message
 
-# Backward-compat alias
-Packet = Message
+Packet = Message  # backward-compat
 
-BLE_NAME     = "Buds Pro 2"
-# Write to fe2c1236 (write-only), listen on fe2c1235 (notify)
-# fe2c123a is read/write/notify but responses come on fe2c1235
-TX_CHAR      = "fe2c1236-8366-4814-8eb0-01de32100bea"
-RX_CHAR      = "fe2c1235-8366-4814-8eb0-01de32100bea"
-RECV_TIMEOUT = 5.0
+NOTHING_UUID    = "aeac4a03-dff5-498f-843a-34487cf133eb"
+CLASSIC_MAC     = "2C:BE:EE:F0:00:3C"
+PROFILE_PATH    = "/org/cmfcontrol/profile0"
+RECV_TIMEOUT    = 5.0
+CONNECT_TIMEOUT = 20.0
+
+
+def _make_profile_class():
+    if not _DBUS_AVAILABLE:
+        class _Stub:
+            def __init__(self, bus, path, on_new_connection):
+                self._on_new_connection = on_new_connection
+        return _Stub
+
+    class _Profile1(dbus.service.Object):
+        def __init__(self, bus, path, on_new_connection):
+            super().__init__(bus, path)
+            self._on_new_connection = on_new_connection
+
+        @dbus.service.method("org.bluez.Profile1", in_signature="oha{sv}", out_signature="")
+        def NewConnection(self, device, fd_handle, properties):
+            self._on_new_connection(str(device), fd_handle.take())
+
+        @dbus.service.method("org.bluez.Profile1", in_signature="o", out_signature="")
+        def RequestDisconnection(self, device): pass
+
+        @dbus.service.method("org.bluez.Profile1", in_signature="", out_signature="")
+        def Release(self): pass
+
+    return _Profile1
+
+_Profile1 = _make_profile_class()
 
 
 class BTSession:
-    def __init__(self, address: str):
-        self.address = address
-        self._ble_address: str | None = None
-        self._client: BleakClient | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread: threading.Thread | None = None
+    def __init__(self, address: str = CLASSIC_MAC):
+        self.address = address.upper()
+        self._fd: int | None = None
         self._fsn = 0
-        self._pending: dict[int, asyncio.Future] = {}
-        self._rx_buf = b""
-
-    # ------------------------------------------------------------------ #
-    #  Public sync API                                                     #
-    # ------------------------------------------------------------------ #
+        self._lock = threading.Lock()
+        self._mainloop = None
+        self._glib_thread = None
+        self._bus = None
+        self._profile_obj = None
+        self._fd_future: Future | None = None
 
     def connect(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
-        self._thread.start()
-        fut = asyncio.run_coroutine_threadsafe(self._async_connect(), self._loop)
-        fut.result(timeout=25)
+        if not _DBUS_AVAILABLE:
+            raise RuntimeError(
+                "dbus-python + PyGObject required.\n"
+                "Run with: /usr/bin/python3"
+            )
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        self._mainloop = GLib.MainLoop()
+        self._bus = dbus.SystemBus()
+        self._fd_future = Future()
+
+        self._profile_obj = _Profile1(
+            self._bus, PROFILE_PATH,
+            lambda dev, fd: self._fd_future.set_result(fd)
+              if not self._fd_future.done() else None
+        )
+
+        mgr = dbus.Interface(
+            self._bus.get_object("org.bluez", "/org/bluez"),
+            "org.bluez.ProfileManager1",
+        )
+        mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
+            "Name": dbus.String("CMF Control"),
+            "Role": dbus.String("client"),
+            "AutoConnect": dbus.Boolean(False),
+        })
+
+        self._glib_thread = threading.Thread(target=self._mainloop.run, daemon=True)
+        self._glib_thread.start()
+
+        device_path = self._find_device_path()
+        device = dbus.Interface(
+            self._bus.get_object("org.bluez", device_path),
+            "org.bluez.Device1",
+        )
+        try:
+            device.ConnectProfile(NOTHING_UUID)
+        except Exception:
+            pass  # BlueZ calls NewConnection before returning — timeout is harmless
+
+        self._fd = self._fd_future.result(timeout=CONNECT_TIMEOUT)
 
     def disconnect(self) -> None:
-        if self._loop and self._client:
-            fut = asyncio.run_coroutine_threadsafe(
-                self._client.disconnect(), self._loop
-            )
+        if self._fd is not None:
             try:
-                fut.result(timeout=5)
-            except Exception:
+                os.close(self._fd)
+            except OSError:
                 pass
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._fd = None
+        if self._mainloop and self._mainloop.is_running():
+            self._mainloop.quit()
 
     def send(self, cmd: int, payload: bytes = b"") -> Message:
-        if not self._loop or not self._client:
-            raise ConnectionError("Not connected")
-        fsn = self._fsn
-        self._fsn = (self._fsn + 1) & 0xFF
-        msg = Message(command=cmd, payload=payload, fsn=fsn)
-        fut = asyncio.run_coroutine_threadsafe(
-            self._async_send(msg), self._loop
-        )
-        return fut.result(timeout=RECV_TIMEOUT + 1)
+        with self._lock:
+            if self._fd is None:
+                raise ConnectionError("Not connected")
+            fsn = self._fsn
+            self._fsn = (self._fsn + 1) & 0xFF
+            msg = Message(command=cmd, payload=payload, fsn=fsn)
+            self._write(msg.encode())
+            return self._recv_response(cmd)
 
     def __enter__(self):
         self.connect()
@@ -77,55 +147,45 @@ class BTSession:
     def __exit__(self, *_):
         self.disconnect()
 
-    # ------------------------------------------------------------------ #
-    #  Async internals                                                     #
-    # ------------------------------------------------------------------ #
+    def _find_device_path(self) -> str:
+        om = dbus.Interface(
+            self._bus.get_object("org.bluez", "/"),
+            "org.freedesktop.DBus.ObjectManager",
+        )
+        target = self.address.replace(":", "_")
+        for path, ifaces in om.GetManagedObjects().items():
+            if "org.bluez.Device1" in ifaces and target in str(path).upper():
+                return str(path)
+        raise ConnectionError(
+            f"Device {self.address} not found in BlueZ. Pair it first via bluetoothctl."
+        )
 
-    async def _async_connect(self) -> None:
-        ble_addr = self.address
-        try:
-            client = BleakClient(ble_addr)
-            await client.connect(timeout=8)
-        except Exception:
-            devices = await BleakScanner.discover(timeout=12)
-            ble_addr = None
-            for d in devices:
-                name = d.name or ""
-                if BLE_NAME in name or "CMF" in name:
-                    ble_addr = d.address
-                    break
-            if not ble_addr:
-                raise ConnectionError(
-                    "Could not find CMF Buds Pro 2.\n"
-                    "Put buds in ears, ensure BT on."
-                )
-            client = BleakClient(ble_addr)
-            await client.connect(timeout=10)
+    def _write(self, data: bytes) -> None:
+        sent = 0
+        while sent < len(data):
+            n = os.write(self._fd, data[sent:])
+            if n <= 0:
+                raise ConnectionError("RFCOMM write failed")
+            sent += n
 
-        self._ble_address = ble_addr
-        self._client = client
-        await self._client.start_notify(RX_CHAR, self._on_notify)
-
-    def _on_notify(self, handle, data: bytes) -> None:
-        self._rx_buf += data
-        # Try to parse complete messages from buffer
-        while len(self._rx_buf) >= 8:
-            try:
-                msg = Message.decode(self._rx_buf)
-                self._rx_buf = self._rx_buf[msg.wire_size:]
-                fut = self._pending.pop(msg.command, None)
-                if fut and not fut.done():
-                    fut.set_result(msg)
-            except ValueError:
-                # Incomplete packet — wait for more data
+    def _recv_response(self, expected_cmd: int) -> Message:
+        buf = b""
+        deadline = time.monotonic() + RECV_TIMEOUT
+        while time.monotonic() < deadline:
+            remaining = max(0.0, deadline - time.monotonic())
+            ready, _, _ = select.select([self._fd], [], [], remaining)
+            if not ready:
                 break
-
-    async def _async_send(self, msg: Message) -> Message:
-        fut: asyncio.Future = self._loop.create_future()
-        self._pending[msg.command] = fut
-        await self._client.write_gatt_char(TX_CHAR, msg.encode(), response=False)
-        try:
-            return await asyncio.wait_for(fut, timeout=RECV_TIMEOUT)
-        except asyncio.TimeoutError:
-            self._pending.pop(msg.command, None)
-            return Message(command=msg.command, payload=b"")
+            chunk = os.read(self._fd, 512)
+            if not chunk:
+                raise ConnectionError("RFCOMM closed by device")
+            buf += chunk
+            try:
+                msg = Message.decode(buf)
+                # Response cmd has bit 15 cleared vs request
+                if (msg.command & 0x7FFF) == (expected_cmd & 0x7FFF):
+                    return msg
+                buf = buf[msg.wire_size:]
+            except ValueError:
+                continue
+        raise TimeoutError(f"No response for cmd={expected_cmd:#x}")
