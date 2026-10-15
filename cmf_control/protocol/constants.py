@@ -44,14 +44,17 @@ ANC_MODE_PASS_THROUGH  = 7    # value=254 (0xFE)
 ANC_MODE_SMART_2       = 8    # value=252 (0xFC)
 
 # ANC encoded values (byte sent in payload)
-ANC_VAL_OFF            = 0x00
-ANC_VAL_SMART_2        = 0xFC
-ANC_VAL_SMART_1        = 0xFD
-ANC_VAL_PASS_THROUGH   = 0xFE
-ANC_VAL_COMFORTABLE    = 0xFF
-ANC_VAL_STRONG         = 0x01  # range 1-127 for ANC levels
-ANC_VAL_RANGE_MIN      = 1
-ANC_VAL_RANGE_MAX      = 127
+# Verified from BudsLink CMFBudsPro2.js noiseControl
+ANC_VAL_OFF            = 0x05
+ANC_VAL_PASS_THROUGH   = 0x07  # transparency
+ANC_VAL_STRONG         = 0x01  # high ANC
+ANC_VAL_MEDIUM         = 0x02  # mid ANC
+ANC_VAL_WEAK           = 0x03  # low ANC
+ANC_VAL_ADAPTIVE       = 0x04  # adaptive ANC
+# Old aliases kept for compat
+ANC_VAL_SMART_2        = 0x04
+ANC_VAL_SMART_1        = 0x04
+ANC_VAL_COMFORTABLE    = 0x05
 
 # EQ presets — verified from wi/v.java onUpdate() case 49183 (=0xC01F)
 # Payload: single int (0-5)

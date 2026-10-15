@@ -13,11 +13,18 @@ ANC_MODES = {
 
 def get_anc(session: BTSession) -> int:
     pkt = session.send(CMD_GET_ANC)
-    if len(pkt.payload) < 1:
-        raise ValueError("Empty ANC response")
-    return pkt.payload[0]
+    p = pkt.payload
+    # Payload: 3-byte tuples (type, value, padding); type=1 = mode
+    i = 0
+    while i + 2 < len(p):
+        t, v = p[i], p[i + 1]
+        if t == 1:  # NOISE_REDUCTION_MODE
+            return v
+        i += 3
+    if len(p) >= 1:
+        return p[0]
+    raise ValueError("Empty ANC response")
 
 def set_anc(session: BTSession, mode: int) -> None:
-    if mode not in ANC_MODES:
-        raise ValueError(f"Unknown ANC mode: {mode:#x}")
-    session.send(CMD_SET_ANC, payload=bytes([mode]))
+    # Payload: single 3-byte tuple (NOISE_REDUCTION_MODE=1, value, 0)
+    session.send(CMD_SET_ANC, payload=bytes([1, mode, 0]))
