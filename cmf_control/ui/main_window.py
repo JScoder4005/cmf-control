@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QStatusBar, QPushButton
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QThreadPool, QRunnable, pyqtSlot
 from cmf_control.ui.widgets.battery_bar import BatteryBar
 from cmf_control.ui.widgets.anc_toggle import ANCToggle
 from cmf_control.ui.widgets.eq_picker import EQPicker
@@ -89,8 +89,6 @@ class MainWindow(QMainWindow):
             self._anc.set_mode(anc_mode)
             eq_preset = get_eq(self._session)
             self._eq.set_preset(eq_preset)
-            gmap = get_gestures(self._session)
-            self._gestures.set_map(gmap)
             self._status.showMessage("Connected")
         except Exception as e:
             self._status.showMessage(f"Load failed: {e}")
@@ -103,10 +101,15 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_anc_changed(self, mode: int):
-        try:
-            set_anc(self._session, mode)
-        except Exception as e:
-            self._status.showMessage(f"ANC error: {e}")
+        session = self._session
+        status = self._status
+        def run():
+            try:
+                set_anc(session, mode)
+            except Exception as e:
+                status.showMessage(f"ANC error: {e}")
+        import threading
+        threading.Thread(target=run, daemon=True).start()
 
     def _on_eq_changed(self, preset: int):
         try:
