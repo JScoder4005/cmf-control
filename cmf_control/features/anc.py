@@ -1,14 +1,15 @@
 from cmf_control.bt.session import BTSession
 from cmf_control.protocol.constants import (
     CMD_GET_ANC, CMD_SET_ANC,
-    ANC_OFF, ANC_TRANSPARENCY, ANC_LIGHT, ANC_MAX,
+    ANC_VAL_OFF, ANC_VAL_PASS_THROUGH, ANC_VAL_STRONG, ANC_VAL_MEDIUM, ANC_VAL_WEAK,
 )
 
 ANC_MODES = {
-    ANC_OFF: "Off",
-    ANC_TRANSPARENCY: "Transparency",
-    ANC_LIGHT: "Light ANC",
-    ANC_MAX: "Max ANC",
+    ANC_VAL_OFF:          "Off",
+    ANC_VAL_PASS_THROUGH: "Transparency",
+    ANC_VAL_WEAK:         "Light ANC",
+    ANC_VAL_MEDIUM:       "Medium ANC",
+    ANC_VAL_STRONG:       "Max ANC",
 }
 
 def get_anc(session: BTSession) -> int:
