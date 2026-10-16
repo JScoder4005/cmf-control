@@ -3,8 +3,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QStatusBar, QScrollArea
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QTimer
 from cmf_control.ui.widgets.battery_bar import BatteryBar
 from cmf_control.ui.widgets.anc_toggle import ANCToggle
 from cmf_control.ui.widgets.eq_picker import EQPicker
@@ -22,29 +21,21 @@ from cmf_control.features.bass import get_bass, set_bass
 from cmf_control.features.spatial import get_spatial, set_spatial
 
 BATTERY_POLL_MS = 30_000
+LABEL_STYLE = "color:#333333; font-size:10px; letter-spacing:3px;"
+ROW_LABEL_STYLE = "color:#444444; font-size:11px; letter-spacing:2px;"
 
 
-def _card(widget: QWidget) -> QFrame:
-    frame = QFrame()
-    frame.setObjectName("card")
-    lay = QVBoxLayout(frame)
-    lay.setContentsMargins(16, 14, 16, 14)
-    lay.setSpacing(10)
-    lay.addWidget(widget)
-    return frame
+def _sep():
+    f = QFrame()
+    f.setFrameShape(QFrame.Shape.HLine)
+    f.setStyleSheet("background:#0f0f0f; max-height:1px; border:none;")
+    return f
 
 
-def _section(label: str, widget: QWidget) -> QFrame:
-    frame = QFrame()
-    frame.setObjectName("card")
-    lay = QVBoxLayout(frame)
-    lay.setContentsMargins(16, 14, 16, 14)
-    lay.setSpacing(8)
-    lbl = QLabel(label)
-    lbl.setObjectName("section")
-    lay.addWidget(lbl)
-    lay.addWidget(widget)
-    return frame
+def _section_label(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setStyleSheet(LABEL_STYLE)
+    return lbl
 
 
 class MainWindow(QMainWindow):
@@ -53,8 +44,8 @@ class MainWindow(QMainWindow):
         self._session = session
         self._connected = False
         self.setWindowTitle("CMF Control")
-        self.setMinimumWidth(480)
-        self.setMinimumHeight(400)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(560)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -64,101 +55,109 @@ class MainWindow(QMainWindow):
         container = QWidget()
         scroll.setWidget(container)
         root = QVBoxLayout(container)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(10)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(20)
 
-        # Header
-        header = QWidget()
-        hlay = QHBoxLayout(header)
-        hlay.setContentsMargins(0, 0, 0, 0)
-
-        left = QVBoxLayout()
-        name = QLabel("CMF BUDS PRO 2")
-        name.setObjectName("device-name")
-        name.setStyleSheet("font-size:17px; letter-spacing:4px; color:#ffffff;")
-        sub = QLabel("NOTHING TECHNOLOGY")
-        sub.setObjectName("section")
-        left.addWidget(name)
-        left.addWidget(sub)
+        # ── Header ──────────────────────────────────────────────
+        header = QHBoxLayout()
+        left_col = QVBoxLayout()
+        left_col.setSpacing(2)
+        device_lbl = QLabel("CMF BUDS PRO 2")
+        device_lbl.setStyleSheet("color:#ffffff; font-size:16px; letter-spacing:4px;")
+        brand_lbl = QLabel("NOTHING TECHNOLOGY")
+        brand_lbl.setStyleSheet("color:#222222; font-size:10px; letter-spacing:3px;")
+        left_col.addWidget(device_lbl)
+        left_col.addWidget(brand_lbl)
 
         self._dot = QLabel("●")
-        self._dot.setObjectName("status-dot")
-        self._dot.setStyleSheet("color:#333333; font-size:12px;")
+        self._dot.setStyleSheet("color:#222222; font-size:11px;")
         self._dot.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        hlay.addLayout(left)
-        hlay.addStretch()
-        hlay.addWidget(self._dot)
-        root.addWidget(header)
+        header.addLayout(left_col)
+        header.addStretch()
+        header.addWidget(self._dot)
+        root.addLayout(header)
+        root.addWidget(_sep())
 
-        # Battery card
+        # ── Battery ─────────────────────────────────────────────
         self._battery = BatteryBar()
-        root.addWidget(_section("BATTERY", self._battery))
+        root.addWidget(self._battery)
+        root.addWidget(_sep())
 
-        # Noise control card
+        # ── Noise Control ────────────────────────────────────────
+        root.addWidget(_section_label("NOISE CONTROL"))
         self._anc = ANCToggle()
         self._anc.mode_changed.connect(self._on_anc_changed)
-        root.addWidget(_section("NOISE CONTROL", self._anc))
+        root.addWidget(self._anc)
+        root.addWidget(_sep())
 
-        # Sound profile card
+        # ── Sound Profile ────────────────────────────────────────
+        root.addWidget(_section_label("SOUND PROFILE"))
         self._eq = EQPicker()
         self._eq.preset_changed.connect(self._on_eq_changed)
-        root.addWidget(_section("SOUND PROFILE", self._eq))
+        root.addWidget(self._eq)
+        root.addWidget(_sep())
 
-        # Toggles row card
-        toggles_frame = QFrame()
-        toggles_frame.setObjectName("card")
-        tlay = QVBoxLayout(toggles_frame)
-        tlay.setContentsMargins(16, 14, 16, 14)
-        tlay.setSpacing(12)
+        # ── Toggle rows ──────────────────────────────────────────
+        toggles = QVBoxLayout()
+        toggles.setSpacing(16)
+        toggles.setContentsMargins(0, 0, 0, 0)
 
-        for label, attr, signal_name, handler in [
-            ("GAME MODE",        "_game_mode", "toggled", self._on_game_mode_changed),
-            ("SPATIAL AUDIO",    "_spatial",   "toggled", self._on_spatial_changed),
-            ("IN-EAR DETECTION", "_in_ear",    "toggled", self._on_in_ear_changed),
+        self._game_mode = ToggleSwitch()
+        self._spatial = ToggleSwitch()
+        self._in_ear = ToggleSwitch()
+
+        self._game_mode.toggled.connect(self._on_game_mode_changed)
+        self._spatial.toggled.connect(self._on_spatial_changed)
+        self._in_ear.toggled.connect(self._on_in_ear_changed)
+
+        for label, widget in [
+            ("GAME MODE", self._game_mode),
+            ("SPATIAL AUDIO", self._spatial),
+            ("IN-EAR DETECTION", self._in_ear),
         ]:
             row = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setObjectName("section")
-            sw = ToggleSwitch()
-            getattr(sw, signal_name).connect(handler)
-            setattr(self, attr, sw)
+            lbl.setStyleSheet(ROW_LABEL_STYLE)
             row.addWidget(lbl)
             row.addStretch()
-            row.addWidget(sw)
-            tlay.addLayout(row)
+            row.addWidget(widget)
+            toggles.addLayout(row)
 
-        root.addWidget(toggles_frame)
+        root.addLayout(toggles)
+        root.addWidget(_sep())
 
-        # Bass card
+        # ── Bass ─────────────────────────────────────────────────
         self._bass = BassControl()
         self._bass.changed.connect(self._on_bass_changed)
-        root.addWidget(_section("BASS ENHANCE", self._bass))
+        root.addWidget(self._bass)
+        root.addWidget(_sep())
 
-        # Gestures card
+        # ── Touch Controls ───────────────────────────────────────
+        root.addWidget(_section_label("TOUCH CONTROLS"))
         self._gestures = GestureMap()
         self._gestures.gesture_changed.connect(self._on_gesture_changed)
-        root.addWidget(_section("TOUCH CONTROLS", self._gestures))
+        root.addWidget(self._gestures)
 
         root.addStretch()
 
+        # ── Status bar ───────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
 
-        # Battery poll timer
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_battery)
 
-        # Animated connecting dot
-        self._dot_timer = QTimer(self)
+        # Pulsing dot animation
         self._dot_states = ["●", "◉", "○", "◉"]
         self._dot_idx = 0
+        self._dot_timer = QTimer(self)
         self._dot_timer.timeout.connect(self._pulse_dot)
-        self._dot_timer.start(500)
+        self._dot_timer.start(600)
+
+        self._status.showMessage("Searching for CMF Buds Pro 2...")
 
     def _pulse_dot(self):
-        if self._connected:
-            return
         self._dot.setText(self._dot_states[self._dot_idx % len(self._dot_states)])
         self._dot_idx += 1
 
@@ -166,14 +165,14 @@ class MainWindow(QMainWindow):
         self._connected = True
         self._dot_timer.stop()
         self._dot.setText("●")
-        self._dot.setStyleSheet("color:#00ff88; font-size:12px;")
+        self._dot.setStyleSheet("color:#00e676; font-size:11px;")
         self._load_initial_state()
         self._timer.start(BATTERY_POLL_MS)
 
     def _load_initial_state(self):
         try:
-            status = get_battery(self._session)
-            self._battery.update_status(status.left, status.right, status.case)
+            s = get_battery(self._session)
+            self._battery.update_status(s.left, s.right, s.case)
         except Exception:
             pass
         try:
@@ -206,14 +205,14 @@ class MainWindow(QMainWindow):
             self._gestures.set_gestures(slots)
         except Exception:
             pass
-        self._status.showMessage("Connected · CMF Buds Pro 2")
+        self._status.showMessage("Connected  ·  CMF Buds Pro 2")
 
     def _poll_battery(self):
         if not self._connected:
             return
         try:
-            status = get_battery(self._session)
-            self._battery.update_status(status.left, status.right, status.case)
+            s = get_battery(self._session)
+            self._battery.update_status(s.left, s.right, s.case)
         except Exception:
             pass
 

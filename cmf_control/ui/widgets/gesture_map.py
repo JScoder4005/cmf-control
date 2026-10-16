@@ -1,29 +1,35 @@
-from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QComboBox
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox
 from PyQt6.QtCore import pyqtSignal
 from cmf_control.features.gestures import SLOTS, ACTIONS, GestureSlot
 
+
 class GestureMap(QWidget):
-    gesture_changed = pyqtSignal(int, int, int, int)  # (device, button_id, gesture_type, action)
+    gesture_changed = pyqtSignal(int, int, int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QGridLayout(self)
-        layout.setSpacing(8)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
         self._combos: dict[tuple, QComboBox] = {}
         self._action_keys = list(ACTIONS.keys())
 
-        for row, (label, device, button_id, gtype) in enumerate(SLOTS):
+        for label, device, button_id, gtype in SLOTS:
+            row = QHBoxLayout()
             lbl = QLabel(label.upper())
-            lbl.setObjectName("subtitle")
+            lbl.setStyleSheet("color:#444444; font-size:10px; letter-spacing:2px;")
+            lbl.setMinimumWidth(120)
             combo = QComboBox()
             for action_val, action_name in ACTIONS.items():
-                combo.addItem(action_name.upper(), action_val)
+                combo.addItem(action_name, action_val)
             key = (device, button_id, gtype)
             combo.currentIndexChanged.connect(
                 lambda _, k=key, c=combo: self._on_change(k, c)
             )
-            layout.addWidget(lbl, row, 0)
-            layout.addWidget(combo, row, 1)
+            row.addWidget(lbl)
+            row.addWidget(combo)
+            row.addStretch()
+            layout.addLayout(row)
             self._combos[key] = combo
 
     def _on_change(self, key: tuple, combo: QComboBox):
