@@ -1,63 +1,54 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMessageBox, QLabel
-from PyQt6.QtCore import QThread, pyqtSignal, Qt
+import time
+import threading
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QThread, pyqtSignal
 from cmf_control.ui.theme import NOTHING_DARK_QSS
 from cmf_control.ui.main_window import MainWindow
 from cmf_control.bt.session import BTSession
 
 
 class ConnectThread(QThread):
-    success = pyqtSignal(object)
-    failure = pyqtSignal(str)
+    success = pyqtSignal()
+    lost = pyqtSignal()
 
     def __init__(self, session: BTSession):
         super().__init__()
         self._session = session
+        self._running = True
+
+    def stop(self):
+        self._running = False
 
     def run(self):
-        try:
-            self._session.connect()
-            self.success.emit(self._session)
-        except Exception as e:
-            self.failure.emit(str(e))
+        while self._running:
+            try:
+                self._session.connect()
+                self.success.emit()
+                return
+            except Exception:
+                time.sleep(5)
 
 
 def run() -> int:
     app = QApplication(sys.argv)
     app.setStyleSheet(NOTHING_DARK_QSS)
 
-    splash = QLabel("Connecting to CMF Buds Pro 2...")
-    splash.setStyleSheet("background:#0a0a0a; color:white; font-size:16px; padding:40px;")
-    splash.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    splash.setWindowFlags(Qt.WindowType.SplashScreen)
-    splash.resize(400, 100)
-    splash.show()
-    app.processEvents()
-
     session = BTSession("2C:BE:EE:F0:00:3C")
-    window_holder = {}
+    window = MainWindow(session)
+    window.show()
+    window.raise_()
+    window.activateWindow()
 
     thread = ConnectThread(session)
 
-    def on_success(s):
-        splash.close()
-        window = MainWindow(s)
-        window_holder["w"] = window
-        window.show()
-        window.raise_()
-        window.activateWindow()
-
-    def on_failure(msg):
-        splash.close()
-        QMessageBox.critical(None, "CMF Control",
-            f"Could not connect:\n{msg}")
-        app.quit()
+    def on_success():
+        window.on_connected()
 
     thread.success.connect(on_success)
-    thread.failure.connect(on_failure)
     thread.start()
 
     ret = app.exec()
-    if "w" in window_holder:
-        session.disconnect()
+    thread.stop()
+    session.disconnect()
     return ret

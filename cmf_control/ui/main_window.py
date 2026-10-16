@@ -26,6 +26,7 @@ class MainWindow(QMainWindow):
     def __init__(self, session: BTSession):
         super().__init__()
         self._session = session
+        self._connected = False
         self.setWindowTitle("CMF CONTROL")
         self.setMinimumWidth(540)
 
@@ -100,9 +101,13 @@ class MainWindow(QMainWindow):
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_battery)
-        self._timer.start(BATTERY_POLL_MS)
 
+        self._status.showMessage("Connecting to CMF Buds Pro 2...")
+
+    def on_connected(self):
+        self._connected = True
         self._load_initial_state()
+        self._timer.start(BATTERY_POLL_MS)
 
     def _sep(self) -> QFrame:
         sep = QFrame()
@@ -149,6 +154,8 @@ class MainWindow(QMainWindow):
         self._status.showMessage("Connected")
 
     def _poll_battery(self):
+        if not self._connected:
+            return
         try:
             status = get_battery(self._session)
             self._battery.update_status(status.left, status.right, status.case)
