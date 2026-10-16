@@ -18,7 +18,7 @@ def get_battery(session: BTSession) -> BatteryStatus:
     # Payload: count byte, then (key, value) pairs — DeviceBattery SparseArray
     levels = {}
     i = 1  # skip count byte
-    while i + 1 < len(p):
+    while i + 1 <= len(p) - 1:
         key, val = p[i], p[i + 1]
         levels[key] = val & BATT_LEVEL_MASK
         i += 2
