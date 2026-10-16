@@ -28,4 +28,5 @@ def get_anc(session: BTSession) -> int:
 
 def set_anc(session: BTSession, mode: int) -> None:
     # Payload: single 3-byte tuple (NOISE_REDUCTION_MODE=1, value, 0)
-    session.send(CMD_SET_ANC, payload=bytes([1, mode, 0]))
+    # Device doesn't reliably respond to SET — fire and forget
+    session.send_nowait(CMD_SET_ANC, payload=bytes([1, mode, 0]))

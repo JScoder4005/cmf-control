@@ -102,12 +102,31 @@ class BTSession:
         try:
             self._mgr.UnregisterProfile(PROFILE_PATH)
         except Exception:
-            pass  # not registered yet — fine
-        self._mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
-            "Name": dbus.String("CMF Control"),
-            "Role": dbus.String("client"),
-            "AutoConnect": dbus.Boolean(False),
-        })
+            pass
+        try:
+            self._mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
+                "Name": dbus.String("CMF Control"),
+                "Role": dbus.String("client"),
+                "AutoConnect": dbus.Boolean(False),
+            })
+        except dbus.exceptions.DBusException as e:
+            if "NotPermitted" in str(e) or "UUID already registered" in str(e):
+                # Stale registration from crashed process — restart bluetoothd and retry
+                import subprocess
+                subprocess.run(["sudo", "systemctl", "restart", "bluetooth"], check=True)
+                time.sleep(2)
+                self._bus = dbus.SystemBus()
+                self._mgr = dbus.Interface(
+                    self._bus.get_object("org.bluez", "/org/bluez"),
+                    "org.bluez.ProfileManager1",
+                )
+                self._mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
+                    "Name": dbus.String("CMF Control"),
+                    "Role": dbus.String("client"),
+                    "AutoConnect": dbus.Boolean(False),
+                })
+            else:
+                raise
 
         self._glib_thread = threading.Thread(target=self._mainloop.run, daemon=True)
         self._glib_thread.start()
@@ -148,6 +167,15 @@ class BTSession:
             msg = Message(command=cmd, payload=payload, fsn=fsn)
             self._write(msg.encode())
             return self._recv_response(cmd)
+
+    def send_nowait(self, cmd: int, payload: bytes = b"") -> None:
+        with self._lock:
+            if self._fd is None:
+                raise ConnectionError("Not connected")
+            fsn = self._fsn
+            self._fsn = (self._fsn + 1) & 0xFF
+            msg = Message(command=cmd, payload=payload, fsn=fsn)
+            self._write(msg.encode())
 
     def __enter__(self):
         self.connect()
