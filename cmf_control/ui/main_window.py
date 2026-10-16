@@ -171,42 +171,43 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(100, self._load_initial_state)
 
     def _load_initial_state(self):
-        try:
-            s = get_battery(self._session)
-            self._battery.update_status(s.left, s.right, s.case)
-        except Exception:
-            pass
-        try:
-            self._anc.set_mode(get_anc(self._session))
-        except Exception:
-            pass
-        try:
-            self._eq.set_preset(get_eq(self._session))
-        except Exception:
-            pass
-        try:
-            self._game_mode.set_state(get_game_mode(self._session))
-        except Exception:
-            pass
-        try:
-            self._spatial.set_state(get_spatial(self._session))
-        except Exception:
-            pass
-        try:
-            self._in_ear.set_state(get_in_ear(self._session))
-        except Exception:
-            pass
-        try:
-            enable, level = get_bass(self._session)
-            self._bass.set_state(enable, level)
-        except Exception:
-            pass
-        try:
-            slots = get_gestures(self._session)
-            self._gestures.set_gestures(slots)
-        except Exception:
-            pass
-        self._status.showMessage("Connected  ·  CMF Buds Pro 2")
+        def load():
+            try:
+                s = get_battery(self._session)
+                QTimer.singleShot(0, lambda: self._battery.update_status(s.left, s.right, s.case))
+            except Exception:
+                pass
+            try:
+                mode = get_anc(self._session)
+                QTimer.singleShot(0, lambda: self._anc.set_mode(mode))
+            except Exception:
+                pass
+            try:
+                preset = get_eq(self._session)
+                QTimer.singleShot(0, lambda: self._eq.set_preset(preset))
+            except Exception:
+                pass
+            try:
+                gm = get_game_mode(self._session)
+                QTimer.singleShot(0, lambda: self._game_mode.set_state(gm))
+            except Exception:
+                pass
+            try:
+                sp = get_spatial(self._session)
+                QTimer.singleShot(0, lambda: self._spatial.set_state(sp))
+            except Exception:
+                pass
+            try:
+                ie = get_in_ear(self._session)
+                QTimer.singleShot(0, lambda: self._in_ear.set_state(ie))
+            except Exception:
+                pass
+            try:
+                enable, level = get_bass(self._session)
+                QTimer.singleShot(0, lambda: self._bass.set_state(enable, level))
+            except Exception:
+                pass
+        threading.Thread(target=load, daemon=True).start()
 
     def _poll_battery(self):
         if not self._connected:
