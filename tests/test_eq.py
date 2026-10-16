@@ -11,9 +11,9 @@ def test_get_eq(mock_session):
 
 def test_set_eq_sends_correct_cmd(mock_session):
     ack = Packet(cmd=CMD_SET_EQ, seq=0, payload=b"")
-    with patch.object(mock_session, "send", return_value=ack) as mock_send:
+    with patch.object(mock_session, "send_nowait", return_value=ack) as mock_send:
         set_eq(mock_session, EQ_BASS_BOOST)
-        mock_send.assert_called_once_with(CMD_SET_EQ, payload=bytes([EQ_BASS_BOOST]))
+        mock_send.assert_called_once_with(CMD_SET_EQ, payload=bytes([EQ_BASS_BOOST, 0x00]))
 
 def test_set_eq_invalid_raises(mock_session):
     with pytest.raises(ValueError, match="Unknown EQ preset"):

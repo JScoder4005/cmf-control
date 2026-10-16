@@ -19,6 +19,6 @@ def test_get_anc_empty_payload_raises(mock_session):
 
 def test_set_anc_sends_tuple(mock_session):
     ack = Packet(cmd=CMD_SET_ANC, seq=0, payload=b"")
-    with patch.object(mock_session, "send", return_value=ack) as mock_send:
+    with patch.object(mock_session, "send_nowait", return_value=ack) as mock_send:
         set_anc(mock_session, ANC_VAL_STRONG)
         mock_send.assert_called_once_with(CMD_SET_ANC, payload=bytes([1, ANC_VAL_STRONG, 0]))

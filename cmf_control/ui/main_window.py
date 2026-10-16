@@ -1,3 +1,4 @@
+import sys
 import threading
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -12,7 +13,8 @@ from cmf_control.ui.widgets.gesture_map import GestureMap
 from cmf_control.ui.widgets.toggle_switch import ToggleSwitch
 from cmf_control.ui.widgets.bass_control import BassControl
 from cmf_control.bt.session import BTSession
-from cmf_control.features.battery import get_battery
+from cmf_control.features.battery import get_battery, is_low_battery
+from cmf_control.features.notify import notify
 from cmf_control.features.anc import get_anc, set_anc
 from cmf_control.features.eq import get_eq, set_eq
 from cmf_control.features.gestures import get_gestures, set_gesture
@@ -23,6 +25,7 @@ from cmf_control.features.spatial import get_spatial, set_spatial
 
 BATTERY_POLL_MS = 30_000
 RED = "#FF1744"
+GREEN = "#2ECC71"
 SECTION_STYLE = f"color:{RED}; font-size:9px; letter-spacing:4px; background:transparent;"
 ROW_STYLE = "color:#555555; font-size:11px; letter-spacing:2px; background:transparent;"
 
@@ -44,6 +47,7 @@ class MainWindow(QMainWindow):
     def __init__(self, session: BTSession):
         super().__init__()
         self._session = session
+        self._low_battery_notified = False
         self._connected = False
         self.setWindowTitle("CMF Control")
         self.setMinimumWidth(400)
@@ -175,7 +179,7 @@ class MainWindow(QMainWindow):
     def on_connected(self):
         self._connected = True
         self._dot_timer.stop()
-        self._dot.setStyleSheet(f"color:{RED}; font-size:13px; background:transparent;")
+        self._dot.setStyleSheet(f"color:{GREEN}; font-size:13px; background:transparent;")
         self._status.showMessage("CONNECTED  ·  CMF BUDS PRO 2")
         self._timer.start(BATTERY_POLL_MS)
         QTimer.singleShot(100, self._load_initial_state)
@@ -217,7 +221,13 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(0, lambda: self._bass.set_state(enable, level))
             except Exception:
                 pass
-        threading.Thread(target=load, daemon=True).start()
+        if sys.platform == "darwin":
+            # mac IOBluetooth only delivers response callbacks to the main
+            # thread's run loop — a background thread here would hang every
+            # get_*() call until RECV_TIMEOUT, silently (caught above).
+            load()
+        else:
+            threading.Thread(target=load, daemon=True).start()
 
     def _poll_battery(self):
         if not self._connected:
@@ -225,8 +235,17 @@ class MainWindow(QMainWindow):
         try:
             s = get_battery(self._session)
             self._battery.update_status(s.left, s.right, s.case)
+            self._check_low_battery(s)
         except Exception:
             pass
+
+    def _check_low_battery(self, status):
+        if is_low_battery(status):
+            if not self._low_battery_notified:
+                self._low_battery_notified = True
+                notify("CMF Control", f"Earbud battery low — {min(v for v in (status.left, status.right) if v > 0)}%")
+        else:
+            self._low_battery_notified = False
 
     def _bg(self, fn):
         threading.Thread(target=fn, daemon=True).start()

@@ -4,10 +4,14 @@ import time
 import threading
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 from cmf_control.ui.theme import NOTHING_DARK_QSS
 from cmf_control.ui.main_window import MainWindow
-from cmf_control.bt.session import BTSession
+
+if sys.platform == "darwin":
+    from cmf_control.bt.session_macos import BTSession
+else:
+    from cmf_control.bt.session import BTSession
 
 ICON_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "icon.png")
 
@@ -69,6 +73,27 @@ def run() -> int:
     window.show()
     window.raise_()
     window.activateWindow()
+
+    if sys.platform == "darwin":
+        # IOBluetooth only delivers async delegate callbacks to the main
+        # thread's run loop, so connect() must run there too — a QThread
+        # (like the Linux path below) would never see its callbacks fire.
+        retry_timer = QTimer()
+        retry_timer.setSingleShot(True)
+
+        def try_connect():
+            try:
+                session.connect()
+                window.on_connected()
+            except Exception:
+                retry_timer.start(5000)
+
+        retry_timer.timeout.connect(try_connect)
+        QTimer.singleShot(0, try_connect)
+
+        ret = app.exec()
+        session.disconnect()
+        return ret
 
     thread = ConnectThread(session)
     thread.success.connect(window.on_connected)

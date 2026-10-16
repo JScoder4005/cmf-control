@@ -10,6 +10,7 @@ license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = [
     "PyQt6>=6.6.0",
+    "pyobjc-framework-IOBluetooth>=10.0; sys_platform == 'darwin'",
 ]
 
 [project.scripts]

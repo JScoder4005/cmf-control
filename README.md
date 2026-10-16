@@ -135,6 +135,22 @@ App opens immediately, connects in background when buds are in range. Close wind
 
 ---
 
+## macOS
+
+Transport backend swaps BlueZ/D-Bus for IOBluetooth — same `BTSession`/`scan_devices` interface, so `features/*` and `ui/*` are untouched. See `cmf_control/bt/session_macos.py` / `scanner_macos.py`.
+
+```bash
+pip install -e ".[dev]"
+pip install pyobjc-framework-IOBluetooth
+open "macos/CMF Control.app"
+```
+
+Pair the buds via System Settings → Bluetooth first (classic RFCOMM needs an active OS-level connection before the app's SDP lookup will succeed). First Bluetooth access shows a system permission dialog — click Allow.
+
+Must launch via the `.app` bundle (`open`), not bare `python -m cmf_control.main` from a terminal — macOS attributes Bluetooth privacy checks to the terminal app otherwise and hard-aborts the process.
+
+---
+
 ## Known Limitations
 
 - Gesture remapping commands send successfully but real-device verification is ongoing
