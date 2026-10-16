@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
     QLabel, QFrame, QStatusBar, QScrollArea
 )
 from PyQt6.QtCore import Qt, QTimer
+from cmf_control.ui.widgets.dot_matrix_background import DotMatrixBackground
 from cmf_control.ui.widgets.battery_bar import BatteryBar
 from cmf_control.ui.widgets.anc_toggle import ANCToggle
 from cmf_control.ui.widgets.eq_picker import EQPicker
@@ -21,20 +22,21 @@ from cmf_control.features.bass import get_bass, set_bass
 from cmf_control.features.spatial import get_spatial, set_spatial
 
 BATTERY_POLL_MS = 30_000
-LABEL_STYLE = "color:#333333; font-size:10px; letter-spacing:3px;"
-ROW_LABEL_STYLE = "color:#444444; font-size:11px; letter-spacing:2px;"
+RED = "#FF1744"
+SECTION_STYLE = f"color:{RED}; font-size:9px; letter-spacing:4px; background:transparent;"
+ROW_STYLE = "color:#555555; font-size:11px; letter-spacing:2px; background:transparent;"
 
 
 def _sep():
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
-    f.setStyleSheet("background:#0f0f0f; max-height:1px; border:none;")
+    f.setStyleSheet("background:#111111; max-height:1px; border:none;")
     return f
 
 
-def _section_label(text: str) -> QLabel:
+def _section_label(text):
     lbl = QLabel(text)
-    lbl.setStyleSheet(LABEL_STYLE)
+    lbl.setStyleSheet(SECTION_STYLE)
     return lbl
 
 
@@ -44,69 +46,78 @@ class MainWindow(QMainWindow):
         self._session = session
         self._connected = False
         self.setWindowTitle("CMF Control")
-        self.setMinimumWidth(420)
-        self.setMaximumWidth(560)
+        self.setMinimumWidth(400)
+        self.setMaximumWidth(520)
+
+        # Dot matrix as central widget background
+        bg = DotMatrixBackground()
+        bg_layout = QVBoxLayout(bg)
+        bg_layout.setContentsMargins(0, 0, 0, 0)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.setCentralWidget(scroll)
+        scroll.setStyleSheet("background:transparent;")
+        bg_layout.addWidget(scroll)
+
+        self.setCentralWidget(bg)
 
         container = QWidget()
+        container.setStyleSheet("background:transparent;")
         scroll.setWidget(container)
         root = QVBoxLayout(container)
-        root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(20)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(18)
 
-        # ── Header ──────────────────────────────────────────────
+        # Header
         header = QHBoxLayout()
-        left_col = QVBoxLayout()
-        left_col.setSpacing(2)
-        device_lbl = QLabel("CMF BUDS PRO 2")
-        device_lbl.setStyleSheet("color:#ffffff; font-size:16px; letter-spacing:4px;")
-        brand_lbl = QLabel("NOTHING TECHNOLOGY")
-        brand_lbl.setStyleSheet("color:#222222; font-size:10px; letter-spacing:3px;")
-        left_col.addWidget(device_lbl)
-        left_col.addWidget(brand_lbl)
+        left = QVBoxLayout()
+        left.setSpacing(3)
+        name = QLabel("CMF BUDS PRO 2")
+        name.setStyleSheet("color:#ffffff; font-size:15px; letter-spacing:4px; background:transparent;")
+        brand = QLabel("NOTHING TECHNOLOGY")
+        brand.setStyleSheet("color:#1f1f1f; font-size:9px; letter-spacing:3px; background:transparent;")
+        left.addWidget(name)
+        left.addWidget(brand)
 
         self._dot = QLabel("●")
-        self._dot.setStyleSheet("color:#222222; font-size:11px;")
+        self._dot.setStyleSheet(f"color:#1a1a1a; font-size:13px; background:transparent;")
         self._dot.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        header.addLayout(left_col)
+        header.addLayout(left)
         header.addStretch()
         header.addWidget(self._dot)
         root.addLayout(header)
         root.addWidget(_sep())
 
-        # ── Battery ─────────────────────────────────────────────
+        # Battery
         self._battery = BatteryBar()
         root.addWidget(self._battery)
         root.addWidget(_sep())
 
-        # ── Noise Control ────────────────────────────────────────
+        # Noise Control
         root.addWidget(_section_label("NOISE CONTROL"))
         self._anc = ANCToggle()
         self._anc.mode_changed.connect(self._on_anc_changed)
         root.addWidget(self._anc)
         root.addWidget(_sep())
 
-        # ── Sound Profile ────────────────────────────────────────
+        # Sound Profile
         root.addWidget(_section_label("SOUND PROFILE"))
         self._eq = EQPicker()
         self._eq.preset_changed.connect(self._on_eq_changed)
         root.addWidget(self._eq)
         root.addWidget(_sep())
 
-        # ── Toggle rows ──────────────────────────────────────────
+        # Toggle rows
+        root.addWidget(_section_label("SETTINGS"))
         toggles = QVBoxLayout()
         toggles.setSpacing(16)
-        toggles.setContentsMargins(0, 0, 0, 0)
+        toggles.setContentsMargins(0, 4, 0, 0)
 
         self._game_mode = ToggleSwitch()
         self._spatial = ToggleSwitch()
         self._in_ear = ToggleSwitch()
-
         self._game_mode.toggled.connect(self._on_game_mode_changed)
         self._spatial.toggled.connect(self._on_spatial_changed)
         self._in_ear.toggled.connect(self._on_in_ear_changed)
@@ -118,7 +129,7 @@ class MainWindow(QMainWindow):
         ]:
             row = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setStyleSheet(ROW_LABEL_STYLE)
+            lbl.setStyleSheet(ROW_STYLE)
             row.addWidget(lbl)
             row.addStretch()
             row.addWidget(widget)
@@ -127,13 +138,14 @@ class MainWindow(QMainWindow):
         root.addLayout(toggles)
         root.addWidget(_sep())
 
-        # ── Bass ─────────────────────────────────────────────────
+        # Bass
+        root.addWidget(_section_label("BASS ENHANCE"))
         self._bass = BassControl()
         self._bass.changed.connect(self._on_bass_changed)
         root.addWidget(self._bass)
         root.addWidget(_sep())
 
-        # ── Touch Controls ───────────────────────────────────────
+        # Touch Controls
         root.addWidget(_section_label("TOUCH CONTROLS"))
         self._gestures = GestureMap()
         self._gestures.gesture_changed.connect(self._on_gesture_changed)
@@ -141,32 +153,30 @@ class MainWindow(QMainWindow):
 
         root.addStretch()
 
-        # ── Status bar ───────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_battery)
 
-        # Pulsing dot animation
-        self._dot_states = ["●", "◉", "○", "◉"]
+        self._dot_colors = ["#1a1a1a", "#252525", "#333333", "#252525"]
         self._dot_idx = 0
         self._dot_timer = QTimer(self)
         self._dot_timer.timeout.connect(self._pulse_dot)
-        self._dot_timer.start(600)
+        self._dot_timer.start(500)
 
-        self._status.showMessage("Searching for CMF Buds Pro 2...")
+        self._status.showMessage("SEARCHING FOR CMF BUDS PRO 2...")
 
     def _pulse_dot(self):
-        self._dot.setText(self._dot_states[self._dot_idx % len(self._dot_states)])
+        c = self._dot_colors[self._dot_idx % len(self._dot_colors)]
+        self._dot.setStyleSheet(f"color:{c}; font-size:13px; background:transparent;")
         self._dot_idx += 1
 
     def on_connected(self):
         self._connected = True
         self._dot_timer.stop()
-        self._dot.setText("●")
-        self._dot.setStyleSheet("color:#00e676; font-size:11px;")
-        self._status.showMessage("Connected  ·  CMF Buds Pro 2")
+        self._dot.setStyleSheet(f"color:{RED}; font-size:13px; background:transparent;")
+        self._status.showMessage("CONNECTED  ·  CMF BUDS PRO 2")
         self._timer.start(BATTERY_POLL_MS)
         QTimer.singleShot(100, self._load_initial_state)
 
