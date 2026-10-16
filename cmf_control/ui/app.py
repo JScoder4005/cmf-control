@@ -36,9 +36,12 @@ class ConnectThread(QThread):
 def run() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setApplicationName("CMF Control")
+    app.setDesktopFileName("cmf-control")
     app.setStyleSheet(NOTHING_DARK_QSS)
 
-    icon = QIcon(ICON_PATH)
+    icon_path = os.path.abspath(ICON_PATH)
+    icon = QIcon(icon_path)
     app.setWindowIcon(icon)
 
     session = BTSession("2C:BE:EE:F0:00:3C")
