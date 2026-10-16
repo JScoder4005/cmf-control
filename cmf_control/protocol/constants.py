@@ -16,7 +16,8 @@ DEVICE_TYPE_CORSOLA = 1  # CMF Buds Pro 2 (codename: corsola)
 CMD_DEVICE_CONFIG      = 0xC006  # serial number, config (response: DeviceConfiguration)
 CMD_BATTERY            = 0xC007  # battery levels (request: no payload; response: DeviceBattery)
 CMD_IN_EAR_DETECTION   = 0xC00E  # wear detect enable/disable
-CMD_NOISE_REDUCTION    = 0xC01E  # ANC / noise reduction set+get
+CMD_NOISE_REDUCTION    = 0xC01E  # ANC / noise reduction get
+CMD_NOISE_REDUCTION_SET = 0xF00F  # ANC / noise reduction set (different cmd!)
 CMD_EQ_PRESET          = 0xC01F  # EQ preset index set+get
 CMD_PERSONALIZED_ANC   = 0xC020  # personalised ANC
 CMD_LOW_LATENCY        = 0xC041  # game/low-latency mode
@@ -78,7 +79,7 @@ BATT_CHARGING_MASK = 0x80  # bit 7 = charging
 # Backward-compat aliases (old names used in feature modules / tests)
 CMD_GET_BATTERY    = CMD_BATTERY
 CMD_GET_ANC        = CMD_NOISE_REDUCTION
-CMD_SET_ANC        = CMD_NOISE_REDUCTION
+CMD_SET_ANC        = CMD_NOISE_REDUCTION_SET
 CMD_GET_EQ         = CMD_EQ_PRESET
 CMD_SET_EQ         = CMD_EQ_PRESET
 CMD_GET_GESTURE    = 0xC030  # not yet verified
