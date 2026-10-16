@@ -166,8 +166,9 @@ class MainWindow(QMainWindow):
         self._dot_timer.stop()
         self._dot.setText("●")
         self._dot.setStyleSheet("color:#00e676; font-size:11px;")
-        self._load_initial_state()
+        self._status.showMessage("Connected  ·  CMF Buds Pro 2")
         self._timer.start(BATTERY_POLL_MS)
+        QTimer.singleShot(100, self._load_initial_state)
 
     def _load_initial_state(self):
         try:
