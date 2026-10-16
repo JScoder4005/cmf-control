@@ -1,42 +1,54 @@
+from dataclasses import dataclass
 from cmf_control.bt.session import BTSession
-from cmf_control.protocol.constants import (
-    CMD_GET_GESTURE, CMD_SET_GESTURE,
-    GESTURE_LEFT_SINGLE, GESTURE_LEFT_DOUBLE, GESTURE_LEFT_TRIPLE, GESTURE_LEFT_HOLD,
-    GESTURE_RIGHT_SINGLE, GESTURE_RIGHT_DOUBLE, GESTURE_RIGHT_TRIPLE, GESTURE_RIGHT_HOLD,
-    GESTURE_NONE, GESTURE_PLAY_PAUSE, GESTURE_NEXT_TRACK, GESTURE_PREV_TRACK,
-    GESTURE_VOLUME_UP, GESTURE_VOLUME_DOWN, GESTURE_ANC_TOGGLE, GESTURE_VOICE_ASSIST,
-)
+from cmf_control.protocol.constants import CMD_GET_GESTURE, CMD_SET_GESTURE
 
-GESTURE_POSITIONS = [
-    GESTURE_LEFT_SINGLE, GESTURE_LEFT_DOUBLE, GESTURE_LEFT_TRIPLE, GESTURE_LEFT_HOLD,
-    GESTURE_RIGHT_SINGLE, GESTURE_RIGHT_DOUBLE, GESTURE_RIGHT_TRIPLE, GESTURE_RIGHT_HOLD,
-]
-
-GESTURE_ACTIONS = {
-    GESTURE_NONE:         "None",
-    GESTURE_PLAY_PAUSE:   "Play/Pause",
-    GESTURE_NEXT_TRACK:   "Next Track",
-    GESTURE_PREV_TRACK:   "Prev Track",
-    GESTURE_VOLUME_UP:    "Volume Up",
-    GESTURE_VOLUME_DOWN:  "Volume Down",
-    GESTURE_ANC_TOGGLE:   "ANC Toggle",
-    GESTURE_VOICE_ASSIST: "Voice Assistant",
+ACTIONS = {
+    0x01: "None",
+    0x02: "Play/Pause",
+    0x08: "Prev Track",
+    0x09: "Next Track",
+    0x0B: "Voice Assistant",
+    0x12: "Volume Up",
+    0x13: "Volume Down",
+    0x0A: "Noise Control",
 }
 
-GestureMap = dict[int, int]
+GESTURE_TYPES = {
+    0x02: "Double Tap",
+    0x03: "Triple Tap",
+    0x07: "Hold",
+}
 
-def get_gestures(session: BTSession) -> GestureMap:
+SLOTS = [
+    ("Left Double",  0x02, 0x01, 0x02),
+    ("Left Triple",  0x02, 0x01, 0x03),
+    ("Left Hold",    0x02, 0x01, 0x07),
+    ("Right Double", 0x03, 0x01, 0x02),
+    ("Right Triple", 0x03, 0x01, 0x03),
+    ("Right Hold",   0x03, 0x01, 0x07),
+]
+
+@dataclass
+class GestureSlot:
+    device: int
+    button_id: int
+    gesture_type: int
+    action: int
+
+def get_gestures(session: BTSession) -> list[GestureSlot]:
     pkt = session.send(CMD_GET_GESTURE)
-    if len(pkt.payload) < len(GESTURE_POSITIONS) * 2:
-        raise ValueError(f"Gesture response too short: {pkt.payload.hex()}")
-    result = {}
-    for i, pos in enumerate(GESTURE_POSITIONS):
-        result[pos] = pkt.payload[i * 2 + 1]
-    return result
+    p = pkt.payload
+    if not p:
+        return []
+    count = p[0]
+    slots = []
+    offset = 1
+    for _ in range(count):
+        if offset + 3 >= len(p):
+            break
+        slots.append(GestureSlot(p[offset], p[offset+1], p[offset+2], p[offset+3]))
+        offset += 4
+    return slots
 
-def set_gesture(session: BTSession, position: int, action: int) -> None:
-    if position not in GESTURE_POSITIONS:
-        raise ValueError(f"Unknown gesture position: {position:#x}")
-    if action not in GESTURE_ACTIONS:
-        raise ValueError(f"Unknown gesture action: {action:#x}")
-    session.send(CMD_SET_GESTURE, payload=bytes([position, action]))
+def set_gesture(session: BTSession, device: int, button_id: int, gesture_type: int, action: int) -> None:
+    session.send_nowait(CMD_SET_GESTURE, payload=bytes([0x01, device, button_id, gesture_type, action]))

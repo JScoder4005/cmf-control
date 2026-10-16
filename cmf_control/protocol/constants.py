@@ -83,8 +83,16 @@ CMD_GET_ANC        = CMD_NOISE_REDUCTION
 CMD_SET_ANC        = CMD_NOISE_REDUCTION_SET
 CMD_GET_EQ         = CMD_EQ_PRESET
 CMD_SET_EQ         = 0xF01D  # LISTENING_MODE_SET (CMF Buds Pro 2 uses this, not EQ_SET)
-CMD_GET_GESTURE    = 0xC030  # not yet verified
-CMD_SET_GESTURE    = 0xC031  # not yet verified
+CMD_GET_GESTURE    = 0xC018
+CMD_SET_GESTURE    = 0xF003
+CMD_IN_EAR_GET     = 0xC00E
+CMD_IN_EAR_SET     = 0xF004
+CMD_LATENCY_GET    = 0xC041
+CMD_LATENCY_SET    = 0xF040
+CMD_BASS_GET       = 0xC04E
+CMD_BASS_SET       = 0xF051
+CMD_SPATIAL_GET    = 0xC04F
+CMD_SPATIAL_SET    = 0xF052
 
 # Old ANC mode names mapped to verified values
 ANC_OFF          = ANC_VAL_OFF
