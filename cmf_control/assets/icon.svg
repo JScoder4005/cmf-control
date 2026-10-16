@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#0a0a0a"/>
+  <!-- Left earbud -->
+  <ellipse cx="22" cy="32" rx="10" ry="14" fill="none" stroke="white" stroke-width="2.5"/>
+  <circle cx="22" cy="32" r="4" fill="white"/>
+  <!-- Right earbud -->
+  <ellipse cx="42" cy="32" rx="10" ry="14" fill="none" stroke="white" stroke-width="2.5"/>
+  <circle cx="42" cy="32" r="4" fill="white"/>
+  <!-- stem left -->
+  <line x1="22" y1="46" x2="22" y2="54" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- stem right -->
+  <line x1="42" y1="46" x2="42" y2="54" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+</svg>
