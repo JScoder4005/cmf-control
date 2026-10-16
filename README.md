@@ -1,35 +1,97 @@
-# CMF Control
+<div align="center">
 
-> Linux companion app for CMF Buds Pro 2 earbuds
+```
+· · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
+·                                                           ·
+·    █▀▀ █▀▄▀█ █▀▀   █▀▀ █▀█ █▄ █ ▀█▀ █▀█ █▀█ █           ·
+·   █▄▄ █ ▀ █ █▀    █▄▄ █▄█ █ ▀█  █  █▀▄ █▄█ █▄▄         ·
+·                                                           ·
+·                   for CMF Buds Pro 2                      ·
+·                      on Linux                             ·
+·                                                           ·
+· · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
+```
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
+**Your CMF Buds Pro 2 deserve better than Windows.**
 
-![CMF Control](assets/screenshot.png)
-*(screenshot coming soon)*
+[![Python](https://img.shields.io/badge/Python-3.10%2B-white?style=flat-square&logo=python&logoColor=black&labelColor=white)](https://python.org)
+[![Platform](https://img.shields.io/badge/Platform-Linux-black?style=flat-square&logo=linux&logoColor=white)](https://kernel.org)
+[![License](https://img.shields.io/badge/License-MIT-white?style=flat-square&labelColor=black)](LICENSE)
+[![PyQt6](https://img.shields.io/badge/UI-PyQt6-41CD52?style=flat-square&labelColor=black)](https://pypi.org/project/PyQt6/)
+[![Bluetooth](https://img.shields.io/badge/Bluetooth-RFCOMM-0082FC?style=flat-square&labelColor=black)](https://bluez.org)
+
+</div>
+
+---
+
+## Why?
+
+CMF ships a companion app for Windows, Mac, and Android.  
+**Linux? Nothing.** *(pun intended)*
+
+ANC stuck on max. EQ locked to default. Gestures frozen since you last used Windows.  
+Not anymore.
+
+CMF Control is a fully reverse-engineered Linux companion app for the **CMF Buds Pro 2**. Built by cracking their Bluetooth protocol from scratch — no official API, no docs, no help from Nothing.
 
 ---
 
 ## Features
 
-- **Battery** — Live L / R / Case levels with 30s polling
-- **Noise Control** — Off / Transparency / Light / Medium / Max ANC
-- **Sound Profile** — Balanced / Rock / Electronic / Pop / Enhance Vocals / Classical
-- **Game Mode** — Low-latency toggle
-- **Spatial Audio** — Toggle on/off
-- **In-Ear Detection** — Toggle on/off
-- **Bass Enhance** — Enable + 0–5 level slider
-- **Touch Controls** — Remap double tap, triple tap, hold per earbud
-- **System tray** — Runs in background, click to show/hide
-- **Auto-connect** — Detects buds when they come in range, no manual step
-- **Launches on login** — Desktop entry + autostart entry installed automatically
+```
+· BATTERY ···················· Live L / R / Case levels, 30s auto-poll
+· NOISE CONTROL ············· Off / Transparency / Light / Medium / Max ANC
+· SOUND PROFILE ············· Balanced / Rock / Electronic / Pop / Enhance Vocals / Classical
+· GAME MODE ················· Low-latency toggle
+· SPATIAL AUDIO ············· Toggle on/off
+· IN-EAR DETECTION ·········· Auto-pause when removed
+· BASS ENHANCE ·············· Enable + 5-level slider
+· TOUCH CONTROLS ············ Remap double tap / triple tap / hold per earbud
+· SYSTEM TRAY ··············· Lives in taskbar, always ready
+· AUTO-CONNECT ·············· Detects buds when in range, no manual steps
+· AUTOSTART ················· Launches silently on login
+```
+
+---
+
+## Screenshot
+
+<div align="center">
+<img src="assets/screenshot.png" width="420" alt="CMF Control UI"/>
+
+*Nothing-authentic UI — dot matrix background, red dot accent*
+</div>
+
+---
+
+## How We Cracked It
+
+CMF Buds Pro 2 has two Bluetooth modes: **BLE GATT** and **classic RFCOMM**.
+
+We tried BLE first. Every response: 16 bytes of random garbage. Fully encrypted, no key, no docs. Dead end.
+
+Then we found **BudsLink** (a GNOME extension for Nothing earbuds) using classic Bluetooth RFCOMM via BlueZ's D-Bus ProfileManager1. Tried it. Got a real `0x55`-prefixed response. The protocol was alive.
+
+**Wire format** (reverse engineered from BudsLink + APK decompilation):
+```
+0x55 | ctrl(2B LE) | cmd(2B LE) | len(2B LE) | fsn(1B) | payload(nB) | CRC(2B)
+```
+
+Key discoveries:
+- GET and SET are **different command codes** — ANC GET=`0xC01E`, SET=`0xF00F`
+- Response cmd = request cmd with **bit 15 cleared** (`0xC007` → `0x4007`)
+- CRC in device responses doesn't match standard CRC-16/ARC — skipped (BudsLink does the same)
+- EQ on CMF Buds Pro 2 uses `LISTENING_MODE_SET=0xF01D`, not `EQ_SET=0xF010`
+
+UUID: `aeac4a03-dff5-498f-843a-34487cf133eb`
 
 ---
 
 ## Requirements
 
-- Ubuntu / Debian Linux (or any distro with BlueZ + D-Bus)
-- Python 3.10+ (**system** `/usr/bin/python3` — not pyenv or virtualenv)
-- BlueZ (installed by default on Ubuntu)
+- Ubuntu / Debian Linux (tested on Ubuntu 24.04)
+- System Python `/usr/bin/python3` — **not pyenv, not venv**
+- BlueZ (`bluetoothd`)
 - `python3-dbus`, `python3-gi`, `python3-pyqt6`
 
 ---
@@ -37,27 +99,26 @@
 ## Installation
 
 ```bash
-# Install system dependencies
+# 1. Install system dependencies
 sudo apt install python3-dbus python3-gi python3-pyqt6
 
-# Clone and install
+# 2. Clone
 git clone https://github.com/JScoder4005/cmf-control
 cd cmf-control
+
+# 3. Install
 sudo pip3 install -e . --break-system-packages
 
-# One-time: allow app to restart bluetooth on stale UUID error
-echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bluetooth" | sudo tee /etc/sudoers.d/cmf-bluetooth
-sudo chmod 440 /etc/sudoers.d/cmf-bluetooth
-```
+# 4. Allow app to auto-recover from Bluetooth registration errors
+echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bluetooth" \
+  | sudo tee /etc/sudoers.d/cmf-bluetooth && sudo chmod 440 /etc/sudoers.d/cmf-bluetooth
 
-Pair your buds first if you haven't already:
-
-```bash
+# 5. Pair buds first (if not already paired)
 bluetoothctl
 > scan on
 > pair 2C:BE:EE:F0:00:3C
 > trust 2C:BE:EE:F0:00:3C
-> connect 2C:BE:EE:F0:00:3C
+> exit
 ```
 
 ---
@@ -68,58 +129,52 @@ bluetoothctl
 /usr/bin/python3 -c "from cmf_control.ui.app import run; import sys; sys.exit(run())"
 ```
 
-Or search **CMF Control** in GNOME Activities after first run (desktop entry is installed automatically).
+Or search **"CMF Control"** in GNOME Activities — desktop entry is installed automatically.
 
----
-
-## How it works
-
-CMF Buds Pro 2 exposes two Bluetooth interfaces:
-
-- **BLE GATT** — encrypted, responses are random-looking 16-byte blobs. Unusable without the encryption key.
-- **Classic Bluetooth RFCOMM** — plaintext, full bidirectional protocol. This is what the official Android app uses.
-
-CMF Control connects via BlueZ's D-Bus `ProfileManager1` API using the proprietary RFCOMM UUID:
-
-```
-aeac4a03-dff5-498f-843a-34487cf133eb
-```
-
-**Wire format** (reverse engineered from APK decompilation + BudsLink source):
-
-```
-SOF(0x55) | ctrl(2B LE) | cmd(2B LE) | len(2B LE) | fsn(1B) | payload(nB) | CRC(2B)
-```
-
-Key discovery: GET and SET use **different command codes**. Example:
-
-| Operation | Command |
-|-----------|---------|
-| ANC GET   | `0xC01E` |
-| ANC SET   | `0xF00F` |
-| EQ GET    | `0xC01F` |
-| EQ SET    | `0xF01D` |
-
-Response commands have bit 15 cleared (`0xC01E` → `0x401E`).
+App opens immediately, connects in background when buds are in range. Close window → stays in system tray. Reopens on login.
 
 ---
 
 ## Known Limitations
 
-- Touch gesture changes are sent to device but not verified on all firmware versions
-- CRC validation skipped on decode — device uses an unconfirmed CRC variant
+- Gesture remapping commands send successfully but real-device verification is ongoing
+- CRC validation on incoming packets skipped (unconfirmed CRC variant)
 - Buds must be paired via `bluetoothctl` before first use
-- Tested on Ubuntu 24.04 with CMF Buds Pro 2 firmware B172
+- Only tested on **CMF Buds Pro 2** — other CMF/Nothing devices untested
+
+---
+
+## Contributing
+
+Built by one person reverse engineering in spare time. Help wanted:
+
+- Verify gesture remapping on your device
+- Test on other Nothing/CMF earbuds
+- Add firmware version display
+- Add "Find My Buds" ring feature  
+- Package as `.deb`
+
+PRs welcome. Open an issue if something's broken.
 
 ---
 
 ## Acknowledgements
 
-- [BudsLink](https://github.com/maniacx/BudsLink) by maniacx — GNOME extension that confirmed RFCOMM works and provided protocol reference
-- [Nothing Archive](https://nothingarchive.tech) — community firmware and device documentation
+- [BudsLink](https://github.com/maniacx/BudsLink) by maniacx — proved RFCOMM worked, provided protocol reference
+- [Nothing Archive](https://nothingarchive.tech) — community hub for the Nothing/CMF ecosystem
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — do whatever you want with it.
+
+---
+
+<div align="center">
+
+**If this saved your ANC settings, star the repo ⭐**
+
+`· · · · · · · · · · · · · · · · · · · · · · · · ·`
+
+</div>
