@@ -146,6 +146,12 @@ class BTSession:
             pairer.start()
             self._spin_until(self._pair_future, CONNECT_TIMEOUT)
 
+        if not self._device.isConnected():
+            # Fail fast: SDP query against a disconnected device just
+            # busy-spins the run loop for the full CONNECT_TIMEOUT with no
+            # chance of succeeding — costly when a caller retries on a loop.
+            raise ConnectionError(f"Device {self.address} not connected (pair/connect via System Settings first)")
+
         self._sdp_future = Future()
         self._device.performSDPQuery_(self._delegate)
         self._spin_until(self._sdp_future, CONNECT_TIMEOUT)

@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QStatusBar, QScrollArea
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from cmf_control.ui.widgets.dot_matrix_background import DotMatrixBackground
 from cmf_control.ui.widgets.battery_bar import BatteryBar
 from cmf_control.ui.widgets.anc_toggle import ANCToggle
@@ -44,6 +44,8 @@ def _section_label(text):
 
 
 class MainWindow(QMainWindow):
+    battery_updated = pyqtSignal(int, int, int)  # left, right, case
+
     def __init__(self, session: BTSession):
         super().__init__()
         self._session = session
@@ -189,6 +191,7 @@ class MainWindow(QMainWindow):
             try:
                 s = get_battery(self._session)
                 QTimer.singleShot(0, lambda: self._battery.update_status(s.left, s.right, s.case))
+                QTimer.singleShot(0, lambda: self.battery_updated.emit(s.left, s.right, s.case))
             except Exception:
                 pass
             try:
@@ -235,6 +238,7 @@ class MainWindow(QMainWindow):
         try:
             s = get_battery(self._session)
             self._battery.update_status(s.left, s.right, s.case)
+            self.battery_updated.emit(s.left, s.right, s.case)
             self._check_low_battery(s)
         except Exception:
             pass
