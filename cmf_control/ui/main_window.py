@@ -45,6 +45,8 @@ def _section_label(text):
 
 class MainWindow(QMainWindow):
     battery_updated = pyqtSignal(int, int, int)  # left, right, case
+    anc_updated = pyqtSignal(int)
+    eq_updated = pyqtSignal(int)
 
     def __init__(self, session: BTSession):
         super().__init__()
@@ -196,12 +198,14 @@ class MainWindow(QMainWindow):
                 pass
             try:
                 mode = get_anc(self._session)
-                QTimer.singleShot(0, lambda: self._anc.set_mode(mode))
+                QTimer.singleShot(0, lambda m=mode: self._anc.set_mode(m))
+                QTimer.singleShot(0, lambda m=mode: self.anc_updated.emit(m))
             except Exception:
                 pass
             try:
                 preset = get_eq(self._session)
-                QTimer.singleShot(0, lambda: self._eq.set_preset(preset))
+                QTimer.singleShot(0, lambda p=preset: self._eq.set_preset(p))
+                QTimer.singleShot(0, lambda p=preset: self.eq_updated.emit(p))
             except Exception:
                 pass
             try:

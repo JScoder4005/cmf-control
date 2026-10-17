@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from cmf_control.ui.theme import NOTHING_DARK_QSS
 from cmf_control.ui.main_window import MainWindow
 from cmf_control.features.anc import ANC_MODES, set_anc
+from cmf_control.features.eq import EQ_PRESETS, set_eq
 
 if sys.platform == "darwin":
     from cmf_control.bt.session_macos import BTSession
@@ -96,38 +97,92 @@ def run() -> int:
     # System tray
     tray = QSystemTrayIcon(icon, app)
     menu = QMenu()
+    menu.setStyleSheet("""
+        QMenu { background:#0a0a0a; color:#cccccc; border:1px solid #222222;
+                font-family:'Space Mono','Courier New',monospace; font-size:11px; padding:4px; }
+        QMenu::item { padding:6px 24px 6px 12px; }
+        QMenu::item:selected { background:#1a1a1a; color:#ffffff; }
+        QMenu::item:disabled { color:#333333; }
+        QMenu::separator { background:#1a1a1a; height:1px; margin:4px 0; }
+        QMenu::indicator:checked { width:8px; height:8px; background:#FF1744;
+                                    border-radius:4px; margin-right:6px; }
+    """)
 
-    anc_menu = menu.addMenu("Noise Control")
-    for mode, label in ANC_MODES.items():
-        action = QAction(label)
-        action.triggered.connect(lambda _checked=False, m=mode: threading.Thread(
-            target=lambda: _safe(set_anc, session, m), daemon=True
-        ).start())
-        anc_menu.addAction(action)
+    # Battery header (disabled label, updated dynamically)
+    battery_action = QAction("● NOT CONNECTED")
+    battery_action.setEnabled(False)
+    menu.addAction(battery_action)
     menu.addSeparator()
 
-    show_action = QAction("Show")
+    # ANC submenu with checkmarks
+    anc_menu = menu.addMenu("⊕  NOISE CONTROL")
+    anc_actions = {}
+    for mode, label in ANC_MODES.items():
+        action = QAction(label.upper())
+        action.setCheckable(True)
+        action.triggered.connect(lambda _=False, m=mode: (
+            threading.Thread(target=lambda: _safe(set_anc, session, m), daemon=True).start(),
+            [a.setChecked(False) for a in anc_actions.values()],
+            anc_actions[m].setChecked(True),
+        ))
+        anc_menu.addAction(action)
+        anc_actions[mode] = action
+
+    # EQ submenu with checkmarks
+    eq_menu = menu.addMenu("◈  SOUND PROFILE")
+    eq_actions = {}
+    for preset, label in EQ_PRESETS.items():
+        action = QAction(label.upper())
+        action.setCheckable(True)
+        action.triggered.connect(lambda _=False, p=preset: (
+            threading.Thread(target=lambda: _safe(set_eq, session, p), daemon=True).start(),
+            [a.setChecked(False) for a in eq_actions.values()],
+            eq_actions[p].setChecked(True),
+        ))
+        eq_menu.addAction(action)
+        eq_actions[preset] = action
+
+    menu.addSeparator()
+
+    show_action = QAction("↗  OPEN CMF CONTROL")
     show_action.triggered.connect(lambda: (window.show(), window.raise_(), window.activateWindow()))
     menu.addAction(show_action)
 
-    quit_action = QAction("Quit")
+    menu.addSeparator()
+
+    quit_action = QAction("✕  QUIT")
     quit_action.triggered.connect(app.quit)
     menu.addAction(quit_action)
 
     tray.setContextMenu(menu)
-    tray.setToolTip("CMF Control — Buds Pro 2")
+    tray.setToolTip("CMF Control — CMF Buds Pro 2")
     tray.activated.connect(lambda reason: (
         window.show(), window.raise_(), window.activateWindow()
     ) if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
     tray.show()
 
     def update_tray_battery(left: int, right: int, case: int):
-        levels = [v for v in (left, right) if v > 0]
-        if not levels:
-            return
-        tray.setIcon(QIcon(_battery_pixmap(f"{min(levels)}%")))
+        parts = []
+        if left > 0:  parts.append(f"L {left}%")
+        if right > 0: parts.append(f"R {right}%")
+        if case > 0:  parts.append(f"CASE {case}%")
+        if parts:
+            battery_action.setText("  " + "   ·   ".join(parts))
+            levels = [v for v in (left, right) if v > 0]
+            tray.setIcon(QIcon(_battery_pixmap(f"{min(levels)}%")))
+            tray.setToolTip("CMF Buds Pro 2  ·  " + "  ".join(parts))
+
+    def update_tray_anc(mode: int):
+        for m, a in anc_actions.items():
+            a.setChecked(m == mode)
+
+    def update_tray_eq(preset: int):
+        for p, a in eq_actions.items():
+            a.setChecked(p == preset)
 
     window.battery_updated.connect(update_tray_battery)
+    window.anc_updated.connect(update_tray_anc)
+    window.eq_updated.connect(update_tray_eq)
 
     window.show()
     window.raise_()
