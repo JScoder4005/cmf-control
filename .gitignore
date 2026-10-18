@@ -6,3 +6,5 @@ build/
 .venv/
 .superpowers/
 .fixpilot/
+macos/*.app/Contents/_CodeSignature/
+macos/*.app/Contents/CodeResources

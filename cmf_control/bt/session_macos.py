@@ -41,6 +41,26 @@ from cmf_control.bt.session import NOTHING_UUID, CLASSIC_MAC, RECV_TIMEOUT, CONN
 Packet = Message  # backward-compat
 
 
+def _pump_once(seconds: float) -> None:
+    # Qt's cocoa platform plugin already owns and continuously pumps the
+    # main thread's native run loop via app.exec(). Nesting our own
+    # NSRunLoop.runUntilDate_ spin *inside* a Qt-dispatched callback (e.g.
+    # a QTimer slot) deadlocks permanently instead of returning after the
+    # requested interval — confirmed via `sample`, not a timing fluke.
+    # QApplication.processEvents() drives the SAME underlying run loop
+    # through Qt's own mechanism instead of a second competing one.
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtCore import QEventLoop
+        app = QApplication.instance()
+    except ImportError:
+        app = None
+    if app is not None:
+        app.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, int(seconds * 1000))
+    else:
+        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(seconds))
+
+
 def _make_delegate_class():
     if not _IOBT_AVAILABLE:
         class _Stub:
@@ -134,6 +154,14 @@ class BTSession:
                 "pyobjc-framework-IOBluetooth required.\n"
                 "Run: pip install pyobjc-framework-IOBluetooth"
             )
+        if self._channel is not None:
+            # Reconnecting after a stale/dead channel reference — drop it
+            # first rather than leaving a dangling handle around.
+            try:
+                self._channel.closeChannel()
+            except Exception:
+                pass
+            self._channel = None
         self._delegate = _SessionDelegate.alloc().initWithSession_(self)
         self._device = IOBluetoothDevice.deviceWithAddressString_(self.address)
         if self._device is None:
@@ -175,12 +203,11 @@ class BTSession:
         self._channel = self._spin_until(self._channel_future, CONNECT_TIMEOUT)
 
     def _spin_until(self, future: Future, timeout: float):
-        rl = NSRunLoop.currentRunLoop()
         deadline = time.monotonic() + timeout
         while not future.done():
             if time.monotonic() > deadline:
                 raise TimeoutError("Timed out waiting for IOBluetooth callback")
-            rl.runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.05))
+            _pump_once(0.05)
         return future.result()
 
     def disconnect(self) -> None:
@@ -223,10 +250,9 @@ class BTSession:
             raise ConnectionError(f"RFCOMM write failed: status={status}")
 
     def _recv_response(self, expected_cmd: int) -> Message:
-        # Must spin this thread's run loop (not just block) so the
+        # Must pump this thread's run loop (not just block) so the
         # rfcommChannelData_data_length_ delegate callback gets a chance to
         # fire and append to _rx_buf — same main-thread constraint as connect().
-        rl = NSRunLoop.currentRunLoop()
         deadline = time.monotonic() + RECV_TIMEOUT
         while True:
             try:
@@ -240,4 +266,4 @@ class BTSession:
                 pass
             if time.monotonic() > deadline:
                 raise TimeoutError(f"No response for cmd={expected_cmd:#x}")
-            rl.runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.05))
+            _pump_once(0.05)

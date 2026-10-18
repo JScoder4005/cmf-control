@@ -9,6 +9,8 @@ from cmf_control.ui.theme import NOTHING_DARK_QSS
 from cmf_control.ui.main_window import MainWindow
 from cmf_control.features.anc import ANC_MODES, set_anc
 from cmf_control.features.eq import EQ_PRESETS, set_eq
+from cmf_control.features.battery import get_battery
+from cmf_control.ui.widgets.connect_popup import ConnectPopup
 
 if sys.platform == "darwin":
     from cmf_control.bt.session_macos import BTSession
@@ -159,7 +161,15 @@ def run() -> int:
     tray.activated.connect(lambda reason: (
         window.show(), window.raise_(), window.activateWindow()
     ) if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
-    tray.show()
+    # Qt 6.11's QSystemTrayIcon on macOS 26 fails to register its
+    # com.apple.appkit.status-items scene with MenuBarAgent ("XPC error
+    # received on message reply handler") and retries once a second,
+    # forever, with no visible icon ever appearing — confirmed via Console
+    # logs, persists even ad-hoc code-signed. Qt/macOS incompatibility, not
+    # fixable here. Not calling .show() avoids the infinite retry churn;
+    # menu/battery-pixmap code stays in place to re-enable once fixed upstream.
+    if sys.platform != "darwin":
+        tray.show()
 
     def update_tray_battery(left: int, right: int, case: int):
         parts = []
@@ -192,17 +202,47 @@ def run() -> int:
         # IOBluetooth only delivers async delegate callbacks to the main
         # thread's run loop, so connect() must run there too — a QThread
         # (like the Linux path below) would never see its callbacks fire.
-        retry_timer = QTimer()
-        retry_timer.setSingleShot(True)
+        popup = ConnectPopup()
+        connect_state = {"attempts": 0, "was_connected": False}
+
+        def is_live_connected() -> bool:
+            # session._channel alone can go stale: if the delegate's
+            # rfcommChannelClosed_ callback doesn't fire on a disconnect,
+            # the cached reference never gets nulled and we'd believe
+            # we're connected forever. Verify against IOBluetooth directly.
+            return (
+                session._channel is not None
+                and session._device is not None
+                and session._device.isConnected()
+            )
 
         def try_connect():
+            if is_live_connected():
+                return  # already connected — nothing to do this tick
             try:
                 session.connect()
                 window.on_connected()
+                if connect_state["attempts"] > 0 or connect_state["was_connected"]:
+                    # Not the instant-success-at-launch case — a real
+                    # reconnect (case opened, buds came back in range).
+                    try:
+                        s = get_battery(session)
+                        popup.show_with(s.left, s.right, s.case)
+                    except Exception:
+                        pass
+                connect_state["was_connected"] = True
+                connect_state["attempts"] = 0
             except Exception:
-                retry_timer.start(5000)
+                connect_state["attempts"] += 1
 
-        retry_timer.timeout.connect(try_connect)
+        # A recurring watchdog, not a one-shot-on-failure timer: after the
+        # first successful connect() nothing else was ever checking for a
+        # later disconnect (case closed) and reconnect (case opened again),
+        # so that transition was silently never noticed.
+        watchdog_timer = QTimer()
+        watchdog_timer.setInterval(5000)
+        watchdog_timer.timeout.connect(try_connect)
+        watchdog_timer.start()
         QTimer.singleShot(0, try_connect)
 
         ret = app.exec()
