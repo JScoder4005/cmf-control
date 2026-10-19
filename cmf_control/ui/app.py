@@ -99,25 +99,31 @@ class ConnectThread(QThread):
 
     def run(self):
         was_bt_connected = False
+        last_state = None  # None/"bt_unavailable"/"connecting"/"connected"
         while self._running:
             if not self._is_bt_connected():
-                log.info(f"[+{elapsed()}] ConnectThread: BT not connected")
-                self.bt_unavailable.emit()
+                if last_state != "bt_unavailable":
+                    log.info(f"[+{elapsed()}] ConnectThread: BT not connected")
+                    self.bt_unavailable.emit()
+                    last_state = "bt_unavailable"
                 was_bt_connected = False
                 time.sleep(3)
                 continue
             if not was_bt_connected:
                 log.info(f"[+{elapsed()}] ConnectThread: BT connected, starting RFCOMM")
                 self.disconnected.emit()
+                last_state = "connecting"
             was_bt_connected = True
             try:
                 self._session.connect()
                 log.info(f"[+{elapsed()}] ConnectThread: RFCOMM success, emitting signal")
                 self.success.emit()
+                last_state = "connected"
                 self._wait_for_disconnect()
                 log.info(f"[+{elapsed()}] ConnectThread: disconnect detected")
                 if self._running:
                     self.disconnected.emit()
+                    last_state = "connecting"
                     self._session.disconnect()
                     was_bt_connected = False
             except Exception as e:
@@ -328,11 +334,15 @@ def run() -> int:
 
     def on_disconnected():
         battery_action.setText("◌  CONNECTING...")
+        tray.setIcon(icon)
         tray.setToolTip("CMF Control — connecting...")
+        window.on_disconnected(searching=True)
 
     def on_bt_unavailable():
         battery_action.setText("● NOT CONNECTED")
+        tray.setIcon(icon)
         tray.setToolTip("CMF Control — buds not in range")
+        window.on_disconnected(searching=False)
 
     thread = ConnectThread(session)
     thread.success.connect(on_connected)

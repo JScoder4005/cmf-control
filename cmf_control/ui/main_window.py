@@ -17,8 +17,14 @@ from cmf_control.ui.widgets.eq_picker import EQPicker
 from cmf_control.ui.widgets.gesture_map import GestureMap
 from cmf_control.ui.widgets.toggle_switch import ToggleSwitch
 from cmf_control.ui.widgets.bass_control import BassControl
+from cmf_control.ui.widgets.battery_graph import BatteryGraph
+from cmf_control.ui.widgets.sleep_timer import SleepTimer
+from cmf_control.features import battery_history
+from cmf_control.features.sleep_timer import pause_all_players
 from cmf_control.bt.session import BTSession
 from cmf_control.features.battery import get_battery, is_low_battery
+from cmf_control.features.firmware import get_firmware_version
+from cmf_control.features.rssi import get_rssi, rssi_to_bars
 from cmf_control.features.notify import notify
 from cmf_control.features.anc import get_anc, set_anc
 from cmf_control.features.eq import get_eq, set_eq
@@ -29,6 +35,7 @@ from cmf_control.features.bass import get_bass, set_bass
 from cmf_control.features.spatial import get_spatial, set_spatial
 
 BATTERY_POLL_MS = 30_000
+RSSI_POLL_MS = 10_000
 RED = "#FF1744"
 GREEN = "#2ECC71"
 SECTION_STYLE = f"color:{RED}; font-size:9px; letter-spacing:4px; background:transparent;"
@@ -50,6 +57,7 @@ def _section_label(text):
 
 class MainWindow(QMainWindow):
     battery_updated = pyqtSignal(int, int, int)  # left, right, case
+    battery_full_updated = pyqtSignal(object)  # BatteryStatus with charging flags
     anc_updated = pyqtSignal(int)
     eq_updated = pyqtSignal(int)
 
@@ -93,19 +101,38 @@ class MainWindow(QMainWindow):
         left.addWidget(name)
         left.addWidget(brand)
 
+        right_col = QVBoxLayout()
+        right_col.setSpacing(3)
+        right_col.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._dot = QLabel("●")
         self._dot.setStyleSheet(f"color:#1a1a1a; font-size:13px; background:transparent;")
         self._dot.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._fw_label = QLabel("")
+        self._fw_label.setStyleSheet("color:#1f1f1f; font-size:9px; letter-spacing:2px; background:transparent;")
+        self._fw_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._rssi_label = QLabel("")
+        self._rssi_label.setStyleSheet("color:#1f1f1f; font-size:9px; letter-spacing:2px; background:transparent;")
+        self._rssi_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        right_col.addWidget(self._dot)
+        right_col.addWidget(self._rssi_label)
+        right_col.addWidget(self._fw_label)
 
         header.addLayout(left)
         header.addStretch()
-        header.addWidget(self._dot)
+        header.addLayout(right_col)
         root.addLayout(header)
         root.addWidget(_sep())
 
         # Battery
         self._battery = BatteryBar()
         root.addWidget(self._battery)
+        root.addWidget(_sep())
+
+        # Battery history graph
+        root.addWidget(_section_label("LAST 24H"))
+        self._graph = BatteryGraph()
+        self._graph.set_points(battery_history.load_last_24h())
+        root.addWidget(self._graph)
         root.addWidget(_sep())
 
         # Noise Control
@@ -158,6 +185,13 @@ class MainWindow(QMainWindow):
         root.addWidget(self._bass)
         root.addWidget(_sep())
 
+        # Sleep timer
+        root.addWidget(_section_label("SLEEP TIMER"))
+        self._sleep = SleepTimer()
+        self._sleep.expired.connect(self._on_sleep_expired)
+        root.addWidget(self._sleep)
+        root.addWidget(_sep())
+
         # Touch Controls
         root.addWidget(_section_label("TOUCH CONTROLS"))
         self._gestures = GestureMap()
@@ -171,6 +205,9 @@ class MainWindow(QMainWindow):
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll_battery)
+
+        self._rssi_timer = QTimer(self)
+        self._rssi_timer.timeout.connect(self._poll_rssi)
 
         self._dot_colors = ["#1a1a1a", "#252525", "#333333", "#252525"]
         self._dot_idx = 0
@@ -190,20 +227,43 @@ class MainWindow(QMainWindow):
         self._dot_timer.stop()
         self._dot.setStyleSheet(f"color:{GREEN}; font-size:13px; background:transparent;")
         self._status.showMessage("CONNECTED  ·  CMF BUDS PRO 2")
+        self._fw_label.setText("FW ...")
+        self._rssi_label.setText("...")
         self._timer.start(BATTERY_POLL_MS)
+        self._rssi_timer.start(RSSI_POLL_MS)
+        QTimer.singleShot(0, self._poll_rssi)
         QTimer.singleShot(0, self._load_initial_state)
+
+    def on_disconnected(self, searching: bool = False):
+        self._connected = False
+        self._low_battery_notified = False
+        self._timer.stop()
+        self._rssi_timer.stop()
+        self._battery.update_status(0, 0, 0)
+        self._fw_label.setText("")
+        self._rssi_label.setText("")
+        self._dot_timer.start(500)
+        if searching:
+            self._status.showMessage("SEARCHING FOR CMF BUDS PRO 2...")
+        else:
+            self._status.showMessage("NOT CONNECTED  ·  BUDS IN CASE / OUT OF RANGE")
 
     def _load_initial_state(self):
         def load():
             log.info(f"[+{_el()}] load_initial_state: begin")
             try:
                 s = get_battery(self._session)
-                log.info(f"[+{_el()}] battery data L={s.left} R={s.right} C={s.case}")
+                log.info(f"[+{_el()}] battery L={s.left}{'c' if s.left_charging else ''} R={s.right}{'c' if s.right_charging else ''} C={s.case}{'c' if s.case_charging else ''}")
                 def ui_update():
-                    self._battery.update_status(s.left, s.right, s.case)
-                    log.info(f"[+{_el()}] battery UI RENDERED")
+                    self._battery.update_status(
+                        s.left, s.right, s.case,
+                        s.left_charging, s.right_charging, s.case_charging,
+                    )
                 QTimer.singleShot(0, ui_update)
                 QTimer.singleShot(0, lambda: self.battery_updated.emit(s.left, s.right, s.case))
+                QTimer.singleShot(0, lambda: self.battery_full_updated.emit(s))
+                battery_history.record(s.left, s.right, s.case)
+                QTimer.singleShot(0, lambda: self._graph.set_points(battery_history.load_last_24h()))
             except Exception as e:
                 log.error(f"battery FAIL: {e}")
             try:
@@ -240,6 +300,12 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(0, lambda: self._bass.set_state(enable, level))
             except Exception:
                 pass
+            try:
+                fw = get_firmware_version(self._session, timeout=1.5)
+                log.info(f"firmware: {fw!r}")
+                QTimer.singleShot(0, lambda f=fw: self._fw_label.setText(f"FW {f}"))
+            except Exception as e:
+                log.error(f"firmware FAIL: {e}")
         if sys.platform == "darwin":
             # mac IOBluetooth only delivers response callbacks to the main
             # thread's run loop — a background thread here would hang every
@@ -253,11 +319,27 @@ class MainWindow(QMainWindow):
             return
         try:
             s = get_battery(self._session)
-            self._battery.update_status(s.left, s.right, s.case)
+            self._battery.update_status(
+                s.left, s.right, s.case,
+                s.left_charging, s.right_charging, s.case_charging,
+            )
             self.battery_updated.emit(s.left, s.right, s.case)
+            self.battery_full_updated.emit(s)
+            battery_history.record(s.left, s.right, s.case)
+            self._graph.set_points(battery_history.load_last_24h())
             self._check_low_battery(s)
         except Exception:
             pass
+
+    def _poll_rssi(self):
+        if not self._connected:
+            return
+        def run():
+            rssi = get_rssi(self._session.address)
+            bars = rssi_to_bars(rssi)
+            text = f"{bars}  {rssi} dBm" if rssi is not None else ""
+            QTimer.singleShot(0, lambda: self._rssi_label.setText(text))
+        threading.Thread(target=run, daemon=True).start()
 
     def _check_low_battery(self, status):
         if is_low_battery(status):
@@ -311,6 +393,12 @@ class MainWindow(QMainWindow):
             try: set_bass(s, enable, level)
             except Exception: pass
         self._bg(run)
+
+    def _on_sleep_expired(self):
+        def run():
+            n = pause_all_players()
+            log.info(f"sleep timer expired, paused {n} player(s)")
+        threading.Thread(target=run, daemon=True).start()
 
     def _on_gesture_changed(self, device: int, button_id: int, gesture_type: int, action: int):
         s = self._session

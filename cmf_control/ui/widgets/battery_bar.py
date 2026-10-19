@@ -40,11 +40,14 @@ class BatteryBar(QWidget):
 
             self._bars[key] = (bar, pct)
 
-    def update_status(self, left: int, right: int, case: int):
-        for key, val in [("left", left), ("right", right), ("case", case)]:
+    def update_status(self, left: int, right: int, case: int,
+                      left_chg: bool = False, right_chg: bool = False, case_chg: bool = False):
+        data = [("left", left, left_chg), ("right", right, right_chg), ("case", case, case_chg)]
+        for key, val, chg in data:
             bar, pct = self._bars[key]
             bar.setValue(val)
             if val == 0:
                 pct.setText("—")
             else:
-                pct.setText(f"{val}%")
+                bolt = " ⚡" if chg else ""
+                pct.setText(f"{val}%{bolt}")
