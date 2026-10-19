@@ -10,8 +10,8 @@ EQ_PRESETS = {
     0x05: "Classical",
 }
 
-def get_eq(session: BTSession) -> int:
-    pkt = session.send(CMD_GET_EQ)
+def get_eq(session: BTSession, timeout: float | None = None) -> int:
+    pkt = session.send(CMD_GET_EQ, timeout=timeout)
     if len(pkt.payload) < 1:
         raise ValueError("Empty EQ response")
     return pkt.payload[0]

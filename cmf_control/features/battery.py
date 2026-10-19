@@ -19,8 +19,8 @@ def is_low_battery(status: "BatteryStatus") -> bool:
         return False
     return min(levels) <= LOW_BATTERY_THRESHOLD
 
-def get_battery(session: BTSession) -> BatteryStatus:
-    pkt = session.send(CMD_GET_BATTERY)
+def get_battery(session: BTSession, timeout: float | None = None) -> BatteryStatus:
+    pkt = session.send(CMD_GET_BATTERY, timeout=timeout)
     p = pkt.payload
     if len(p) < 2:
         raise ValueError(f"Battery response too short: {p.hex()}")

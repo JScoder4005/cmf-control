@@ -1,8 +1,8 @@
 from cmf_control.bt.session import BTSession
 from cmf_control.protocol.constants import CMD_SPATIAL_GET, CMD_SPATIAL_SET
 
-def get_spatial(session: BTSession) -> bool:
-    pkt = session.send(CMD_SPATIAL_GET)
+def get_spatial(session: BTSession, timeout: float | None = None) -> bool:
+    pkt = session.send(CMD_SPATIAL_GET, timeout=timeout)
     p = pkt.payload
     if len(p) < 1:
         raise ValueError(f"Spatial audio response too short: {p.hex()}")

@@ -1,8 +1,8 @@
 from cmf_control.bt.session import BTSession
 from cmf_control.protocol.constants import CMD_BASS_GET, CMD_BASS_SET
 
-def get_bass(session: BTSession) -> tuple[bool, int]:
-    pkt = session.send(CMD_BASS_GET)
+def get_bass(session: BTSession, timeout: float | None = None) -> tuple[bool, int]:
+    pkt = session.send(CMD_BASS_GET, timeout=timeout)
     p = pkt.payload
     if len(p) < 2:
         raise ValueError(f"Bass response too short: {p.hex()}")

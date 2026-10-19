@@ -1,5 +1,10 @@
 import sys
 import threading
+import logging
+import time
+log = logging.getLogger("cmf_control.window")
+_WIN_START = time.monotonic()
+def _el(): return f"{time.monotonic()-_WIN_START:.2f}s"
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QStatusBar, QScrollArea
@@ -186,45 +191,52 @@ class MainWindow(QMainWindow):
         self._dot.setStyleSheet(f"color:{GREEN}; font-size:13px; background:transparent;")
         self._status.showMessage("CONNECTED  ·  CMF BUDS PRO 2")
         self._timer.start(BATTERY_POLL_MS)
-        QTimer.singleShot(100, self._load_initial_state)
+        QTimer.singleShot(0, self._load_initial_state)
 
     def _load_initial_state(self):
         def load():
+            log.info(f"[+{_el()}] load_initial_state: begin")
             try:
                 s = get_battery(self._session)
-                QTimer.singleShot(0, lambda: self._battery.update_status(s.left, s.right, s.case))
+                log.info(f"[+{_el()}] battery data L={s.left} R={s.right} C={s.case}")
+                def ui_update():
+                    self._battery.update_status(s.left, s.right, s.case)
+                    log.info(f"[+{_el()}] battery UI RENDERED")
+                QTimer.singleShot(0, ui_update)
                 QTimer.singleShot(0, lambda: self.battery_updated.emit(s.left, s.right, s.case))
-            except Exception:
-                pass
+            except Exception as e:
+                log.error(f"battery FAIL: {e}")
             try:
-                mode = get_anc(self._session)
+                mode = get_anc(self._session, timeout=1.5)
+                log.info(f"anc OK mode={mode}")
                 QTimer.singleShot(0, lambda m=mode: self._anc.set_mode(m))
                 QTimer.singleShot(0, lambda m=mode: self.anc_updated.emit(m))
-            except Exception:
-                pass
+            except Exception as e:
+                log.error(f"anc FAIL: {e}")
             try:
-                preset = get_eq(self._session)
+                preset = get_eq(self._session, timeout=1.5)
+                log.info(f"eq OK preset={preset}")
                 QTimer.singleShot(0, lambda p=preset: self._eq.set_preset(p))
                 QTimer.singleShot(0, lambda p=preset: self.eq_updated.emit(p))
-            except Exception:
-                pass
+            except Exception as e:
+                log.error(f"eq FAIL: {e}")
             try:
-                gm = get_game_mode(self._session)
+                gm = get_game_mode(self._session, timeout=1.5)
                 QTimer.singleShot(0, lambda: self._game_mode.set_state(gm))
             except Exception:
                 pass
             try:
-                sp = get_spatial(self._session)
+                sp = get_spatial(self._session, timeout=1.5)
                 QTimer.singleShot(0, lambda: self._spatial.set_state(sp))
             except Exception:
                 pass
             try:
-                ie = get_in_ear(self._session)
+                ie = get_in_ear(self._session, timeout=1.5)
                 QTimer.singleShot(0, lambda: self._in_ear.set_state(ie))
             except Exception:
                 pass
             try:
-                enable, level = get_bass(self._session)
+                enable, level = get_bass(self._session, timeout=1.5)
                 QTimer.singleShot(0, lambda: self._bass.set_state(enable, level))
             except Exception:
                 pass

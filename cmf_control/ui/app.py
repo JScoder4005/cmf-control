@@ -2,6 +2,18 @@ import sys
 import os
 import time
 import threading
+import logging
+
+logging.basicConfig(
+    filename=os.path.expanduser("~/.cache/cmf-control.log"),
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logging.getLogger().addHandler(logging.StreamHandler(sys.stderr))
+log = logging.getLogger("cmf_control.app")
+APP_START = time.monotonic()
+def elapsed(): return f"{time.monotonic()-APP_START:.2f}s"
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QFont, QColor
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
@@ -63,6 +75,8 @@ def _safe(fn, *args):
 
 class ConnectThread(QThread):
     success = pyqtSignal()
+    disconnected = pyqtSignal()
+    bt_unavailable = pyqtSignal()   # buds in case / out of range
 
     def __init__(self, session: BTSession):
         super().__init__()
@@ -72,14 +86,62 @@ class ConnectThread(QThread):
     def stop(self):
         self._running = False
 
+    def _is_bt_connected(self) -> bool:
+        import subprocess
+        try:
+            out = subprocess.run(
+                ["bluetoothctl", "info", self._session.address],
+                capture_output=True, text=True, timeout=3
+            ).stdout
+            return "Connected: yes" in out
+        except Exception:
+            return False
+
     def run(self):
+        was_bt_connected = False
         while self._running:
+            if not self._is_bt_connected():
+                log.info(f"[+{elapsed()}] ConnectThread: BT not connected")
+                self.bt_unavailable.emit()
+                was_bt_connected = False
+                time.sleep(3)
+                continue
+            if not was_bt_connected:
+                log.info(f"[+{elapsed()}] ConnectThread: BT connected, starting RFCOMM")
+                self.disconnected.emit()
+            was_bt_connected = True
             try:
                 self._session.connect()
+                log.info(f"[+{elapsed()}] ConnectThread: RFCOMM success, emitting signal")
                 self.success.emit()
-                return
+                self._wait_for_disconnect()
+                log.info(f"[+{elapsed()}] ConnectThread: disconnect detected")
+                if self._running:
+                    self.disconnected.emit()
+                    self._session.disconnect()
+                    was_bt_connected = False
+            except Exception as e:
+                log.exception(f"ConnectThread: RFCOMM failed: {e}")
+                try:
+                    self._session.disconnect()
+                except Exception:
+                    pass
+            if self._running:
+                time.sleep(1)
+
+    def _wait_for_disconnect(self):
+        import subprocess
+        while self._running:
+            time.sleep(4)
+            try:
+                out = subprocess.run(
+                    ["bluetoothctl", "info", self._session.address],
+                    capture_output=True, text=True, timeout=3
+                ).stdout
+                if "Connected: no" in out:
+                    return
             except Exception:
-                time.sleep(5)
+                pass
 
 
 def run() -> int:
@@ -249,8 +311,33 @@ def run() -> int:
         session.disconnect()
         return ret
 
+    popup = ConnectPopup()
+    connect_state = {"count": 0, "popup_pending": False}
+
+    def on_connected():
+        connect_state["count"] += 1
+        connect_state["popup_pending"] = connect_state["count"] > 1
+        window.on_connected()
+
+    def on_battery_for_popup(left: int, right: int, case: int):
+        if connect_state["popup_pending"]:
+            connect_state["popup_pending"] = False
+            popup.show_with(left, right, case)
+
+    window.battery_updated.connect(on_battery_for_popup)
+
+    def on_disconnected():
+        battery_action.setText("◌  CONNECTING...")
+        tray.setToolTip("CMF Control — connecting...")
+
+    def on_bt_unavailable():
+        battery_action.setText("● NOT CONNECTED")
+        tray.setToolTip("CMF Control — buds not in range")
+
     thread = ConnectThread(session)
-    thread.success.connect(window.on_connected)
+    thread.success.connect(on_connected)
+    thread.disconnected.connect(on_disconnected)
+    thread.bt_unavailable.connect(on_bt_unavailable)
     thread.start()
 
     ret = app.exec()

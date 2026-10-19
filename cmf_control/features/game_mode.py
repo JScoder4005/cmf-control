@@ -1,8 +1,8 @@
 from cmf_control.bt.session import BTSession
 from cmf_control.protocol.constants import CMD_LATENCY_GET, CMD_LATENCY_SET
 
-def get_game_mode(session: BTSession) -> bool:
-    pkt = session.send(CMD_LATENCY_GET)
+def get_game_mode(session: BTSession, timeout: float | None = None) -> bool:
+    pkt = session.send(CMD_LATENCY_GET, timeout=timeout)
     p = pkt.payload
     if len(p) < 1:
         raise ValueError(f"Game mode response too short: {p.hex()}")

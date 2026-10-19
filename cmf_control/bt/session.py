@@ -13,17 +13,22 @@ Run with: /usr/bin/python3
 
 UUID: aeac4a03-dff5-498f-843a-34487cf133eb
 """
+import atexit
+import logging
 import os
 import select
 import threading
 import time
 from concurrent.futures import Future
 
+logger = logging.getLogger("cmf_control.bt")
+
 try:
     import dbus
     import dbus.service
     import dbus.mainloop.glib
     from gi.repository import GLib
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     _DBUS_AVAILABLE = True
 except ImportError:
     _DBUS_AVAILABLE = False
@@ -34,9 +39,9 @@ Packet = Message  # backward-compat
 
 NOTHING_UUID    = "aeac4a03-dff5-498f-843a-34487cf133eb"
 CLASSIC_MAC     = "2C:BE:EE:F0:00:3C"
-PROFILE_PATH    = "/org/cmfcontrol/profile0"
-RECV_TIMEOUT    = 5.0
-CONNECT_TIMEOUT = 20.0
+PROFILE_PATH    = f"/org/cmfcontrol/profile_{os.getpid()}"
+RECV_TIMEOUT    = 2.0
+CONNECT_TIMEOUT = 5.0
 
 
 def _make_profile_class():
@@ -84,8 +89,9 @@ class BTSession:
                 "dbus-python + PyGObject required.\n"
                 "Run with: /usr/bin/python3"
             )
-        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-        self._mainloop = GLib.MainLoop()
+        t0 = time.monotonic()
+        logger.info("connect: start")
+        self._mainloop = GLib.MainLoop(GLib.MainContext.default())
         self._bus = dbus.SystemBus()
         self._fd_future = Future()
 
@@ -103,30 +109,26 @@ class BTSession:
             self._mgr.UnregisterProfile(PROFILE_PATH)
         except Exception:
             pass
-        try:
-            self._mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
-                "Name": dbus.String("CMF Control"),
-                "Role": dbus.String("client"),
-                "AutoConnect": dbus.Boolean(False),
-            })
-        except dbus.exceptions.DBusException as e:
-            if "NotPermitted" in str(e) or "UUID already registered" in str(e):
-                # Stale registration from crashed process — restart bluetoothd and retry
-                import subprocess
-                subprocess.run(["sudo", "systemctl", "restart", "bluetooth"], check=True)
-                time.sleep(2)
-                self._bus = dbus.SystemBus()
-                self._mgr = dbus.Interface(
-                    self._bus.get_object("org.bluez", "/org/bluez"),
-                    "org.bluez.ProfileManager1",
-                )
+        for attempt in range(3):
+            try:
                 self._mgr.RegisterProfile(PROFILE_PATH, NOTHING_UUID, {
                     "Name": dbus.String("CMF Control"),
                     "Role": dbus.String("client"),
                     "AutoConnect": dbus.Boolean(False),
                 })
-            else:
-                raise
+                break
+            except dbus.exceptions.DBusException as e:
+                if ("NotPermitted" in str(e) or "AlreadyExists" in str(e)) and attempt < 2:
+                    # Stale registration from previous process — wait for D-Bus GC and retry
+                    time.sleep(3)
+                    try:
+                        self._mgr.UnregisterProfile(PROFILE_PATH)
+                    except Exception:
+                        pass
+                else:
+                    raise
+
+        atexit.register(self.disconnect)
 
         self._glib_thread = threading.Thread(target=self._mainloop.run, daemon=True)
         self._glib_thread.start()
@@ -136,12 +138,19 @@ class BTSession:
             self._bus.get_object("org.bluez", device_path),
             "org.bluez.Device1",
         )
-        try:
-            device.ConnectProfile(NOTHING_UUID)
-        except Exception:
-            pass  # BlueZ calls NewConnection before returning — timeout is harmless
+        # Async: fire ConnectProfile without waiting for return.
+        # BlueZ dispatches NewConnection to our Profile1 object as soon as
+        # the RFCOMM channel is up; waiting for ConnectProfile to return
+        # synchronously blocks the full 25s dbus-python proxy timeout.
+        device.ConnectProfile(
+            NOTHING_UUID,
+            reply_handler=lambda: None,
+            error_handler=lambda e: None,
+        )
 
+        logger.info("connect: ConnectProfile called, waiting for NewConnection...")
         self._fd = self._fd_future.result(timeout=CONNECT_TIMEOUT)
+        logger.info(f"connect: done in {time.monotonic()-t0:.2f}s")
 
     def disconnect(self) -> None:
         if self._fd is not None:
@@ -155,10 +164,16 @@ class BTSession:
                 self._mgr.UnregisterProfile(PROFILE_PATH)
             except Exception:
                 pass
+        if self._profile_obj is not None:
+            try:
+                self._profile_obj.remove_from_connection()
+            except Exception:
+                pass
+            self._profile_obj = None
         if self._mainloop and self._mainloop.is_running():
             self._mainloop.quit()
 
-    def send(self, cmd: int, payload: bytes = b"") -> Message:
+    def send(self, cmd: int, payload: bytes = b"", timeout: float | None = None) -> Message:
         with self._lock:
             if self._fd is None:
                 raise ConnectionError("Not connected")
@@ -166,7 +181,7 @@ class BTSession:
             self._fsn = (self._fsn + 1) & 0xFF
             msg = Message(command=cmd, payload=payload, fsn=fsn)
             self._write(msg.encode())
-            return self._recv_response(cmd)
+            return self._recv_response(cmd, timeout=timeout or RECV_TIMEOUT)
 
     def send_nowait(self, cmd: int, payload: bytes = b"") -> None:
         with self._lock:
@@ -205,9 +220,9 @@ class BTSession:
                 raise ConnectionError("RFCOMM write failed")
             sent += n
 
-    def _recv_response(self, expected_cmd: int) -> Message:
+    def _recv_response(self, expected_cmd: int, timeout: float = RECV_TIMEOUT) -> Message:
         buf = b""
-        deadline = time.monotonic() + RECV_TIMEOUT
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             remaining = max(0.0, deadline - time.monotonic())
             ready, _, _ = select.select([self._fd], [], [], remaining)

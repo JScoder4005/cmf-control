@@ -12,8 +12,8 @@ ANC_MODES = {
     ANC_VAL_STRONG:       "Max ANC",
 }
 
-def get_anc(session: BTSession) -> int:
-    pkt = session.send(CMD_GET_ANC)
+def get_anc(session: BTSession, timeout: float | None = None) -> int:
+    pkt = session.send(CMD_GET_ANC, timeout=timeout)
     p = pkt.payload
     # Payload: 3-byte tuples (type, value, padding); type=1 = mode
     i = 0
