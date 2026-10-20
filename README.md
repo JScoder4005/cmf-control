@@ -40,17 +40,24 @@ CMF Control is a fully reverse-engineered Linux companion app for the **CMF Buds
 
 ```
 · BATTERY ···················· Live L / R / Case levels, 30s auto-poll
+· BATTERY HISTORY ············ 24h discharge graph for L / R / case
+· FIRMWARE VERSION ·········· Read live from device, shown in header
+· SIGNAL STRENGTH ············ RSSI bars + dBm, polled every 10s
 · NOISE CONTROL ············· Off / Transparency / Light / Medium / Max ANC
 · SOUND PROFILE ············· Balanced / Rock / Electronic / Pop / Enhance Vocals / Classical
 · GAME MODE ················· Low-latency toggle
 · SPATIAL AUDIO ············· Toggle on/off
 · IN-EAR DETECTION ·········· Auto-pause when removed
 · BASS ENHANCE ·············· Enable + 5-level slider
+· SLEEP TIMER ··············· 10/20/30/45/60m presets, pauses all MPRIS players
 · TOUCH CONTROLS ············ Remap double tap / triple tap / hold per earbud
 · SYSTEM TRAY ··············· Lives in taskbar, always ready
 · AUTO-CONNECT ·············· Detects buds when in range, no manual steps
+· AUTO-RECONNECT ··········· Reconnects on its own when buds come back
 · AUTOSTART ················· Launches silently on login
 ```
+
+**Cold-start:** window to full state ~0.3s after launch on a warm BlueZ.
 
 ---
 
@@ -100,7 +107,7 @@ UUID: `aeac4a03-dff5-498f-843a-34487cf133eb`
 
 ```bash
 # 1. Install system dependencies
-sudo apt install python3-dbus python3-gi python3-pyqt6
+sudo apt install python3-dbus python3-gi python3-pyqt6 playerctl
 
 # 2. Clone
 git clone https://github.com/JScoder4005/cmf-control

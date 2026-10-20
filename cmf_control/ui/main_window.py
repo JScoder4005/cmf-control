@@ -1,10 +1,15 @@
 import sys
+import os
 import threading
 import logging
 import time
 log = logging.getLogger("cmf_control.window")
 _WIN_START = time.monotonic()
 def _el(): return f"{time.monotonic()-_WIN_START:.2f}s"
+
+
+def _icon_path() -> str:
+    return os.path.join(os.path.dirname(__file__), "..", "assets", "icon.png")
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QStatusBar, QScrollArea
@@ -19,8 +24,10 @@ from cmf_control.ui.widgets.toggle_switch import ToggleSwitch
 from cmf_control.ui.widgets.bass_control import BassControl
 from cmf_control.ui.widgets.battery_graph import BatteryGraph
 from cmf_control.ui.widgets.sleep_timer import SleepTimer
+from cmf_control.ui.widgets.now_playing import NowPlayingWidget
 from cmf_control.features import battery_history
 from cmf_control.features.sleep_timer import pause_all_players
+from cmf_control.features import mpris
 from cmf_control.bt.session import BTSession
 from cmf_control.features.battery import get_battery, is_low_battery
 from cmf_control.features.firmware import get_firmware_version
@@ -92,6 +99,11 @@ class MainWindow(QMainWindow):
 
         # Header
         header = QHBoxLayout()
+        header.setSpacing(14)
+
+        from cmf_control.ui.widgets.device_badge import DeviceBadge
+        header.addWidget(DeviceBadge())
+
         left = QVBoxLayout()
         left.setSpacing(3)
         name = QLabel("CMF BUDS PRO 2")
@@ -126,6 +138,16 @@ class MainWindow(QMainWindow):
         # Battery
         self._battery = BatteryBar()
         root.addWidget(self._battery)
+        root.addWidget(_sep())
+
+        # Now Playing
+        root.addWidget(_section_label("NOW PLAYING"))
+        self._now_playing = NowPlayingWidget()
+        self._now_playing.play_pause.connect(lambda: mpris.play_pause(self._mpris_state.player if self._mpris_state else None))
+        self._now_playing.next_track.connect(lambda: mpris.next_track(self._mpris_state.player if self._mpris_state else None))
+        self._now_playing.prev_track.connect(lambda: mpris.prev_track(self._mpris_state.player if self._mpris_state else None))
+        root.addWidget(self._now_playing)
+        self._mpris_state: mpris.NowPlaying | None = None
         root.addWidget(_sep())
 
         # Battery history graph
@@ -216,6 +238,16 @@ class MainWindow(QMainWindow):
         self._dot_timer.start(500)
 
         self._status.showMessage("SEARCHING FOR CMF BUDS PRO 2...")
+
+        # MPRIS watcher — real-time now-playing via D-Bus signals, no polling
+        self._mpris_watcher = mpris.MprisWatcher(
+            on_change=lambda s: QTimer.singleShot(0, lambda: self._update_now_playing(s))
+        )
+        self._mpris_watcher.start()
+
+    def _update_now_playing(self, state):
+        self._mpris_state = state
+        self._now_playing.update_state(state)
 
     def _pulse_dot(self):
         c = self._dot_colors[self._dot_idx % len(self._dot_colors)]
