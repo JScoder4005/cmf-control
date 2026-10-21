@@ -8,6 +8,7 @@ EQ_PRESETS = {
     0x03: "Pop",
     0x04: "Enhance Vocals",
     0x05: "Classical",
+    0x06: "Custom",
 }
 
 def get_eq(session: BTSession, timeout: float | None = None) -> int:

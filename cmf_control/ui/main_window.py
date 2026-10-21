@@ -19,6 +19,7 @@ from cmf_control.ui.widgets.dot_matrix_background import DotMatrixBackground
 from cmf_control.ui.widgets.battery_bar import BatteryBar
 from cmf_control.ui.widgets.anc_toggle import ANCToggle
 from cmf_control.ui.widgets.eq_picker import EQPicker
+from cmf_control.ui.widgets.custom_eq import CustomEQ
 from cmf_control.ui.widgets.gesture_map import GestureMap
 from cmf_control.ui.widgets.toggle_switch import ToggleSwitch
 from cmf_control.ui.widgets.bass_control import BassControl
@@ -35,6 +36,8 @@ from cmf_control.features.rssi import get_rssi, rssi_to_bars
 from cmf_control.features.notify import notify
 from cmf_control.features.anc import get_anc, set_anc
 from cmf_control.features.eq import get_eq, set_eq
+from cmf_control.features.custom_eq import get_custom_eq, set_custom_eq
+from cmf_control.protocol.constants import EQ_CUSTOM
 from cmf_control.features.gestures import get_gestures, set_gesture
 from cmf_control.features.in_ear import get_in_ear, set_in_ear
 from cmf_control.features.game_mode import get_game_mode, set_game_mode
@@ -169,6 +172,10 @@ class MainWindow(QMainWindow):
         self._eq = EQPicker()
         self._eq.preset_changed.connect(self._on_eq_changed)
         root.addWidget(self._eq)
+        self._custom_eq = CustomEQ()
+        self._custom_eq.changed.connect(self._on_custom_eq_changed)
+        self._custom_eq.hide()
+        root.addWidget(self._custom_eq)
         root.addWidget(_sep())
 
         # Toggle rows
@@ -309,9 +316,17 @@ class MainWindow(QMainWindow):
                 preset = get_eq(self._session, timeout=1.5)
                 log.info(f"eq OK preset={preset}")
                 QTimer.singleShot(0, lambda p=preset: self._eq.set_preset(p))
+                QTimer.singleShot(0, lambda p=preset: self._custom_eq.setVisible(p == EQ_CUSTOM))
                 QTimer.singleShot(0, lambda p=preset: self.eq_updated.emit(p))
             except Exception as e:
                 log.error(f"eq FAIL: {e}")
+            try:
+                # Gains persist on the buds even when another preset is active.
+                bands = get_custom_eq(self._session, timeout=1.5)
+                log.info(f"custom eq OK bass/mid/treble={bands}")
+                QTimer.singleShot(0, lambda b=bands: self._custom_eq.set_values(*b))
+            except Exception as e:
+                log.error(f"custom eq FAIL: {e}")
             try:
                 gm = get_game_mode(self._session, timeout=1.5)
                 QTimer.singleShot(0, lambda: self._game_mode.set_state(gm))
@@ -392,9 +407,17 @@ class MainWindow(QMainWindow):
         self._bg(run)
 
     def _on_eq_changed(self, preset: int):
+        self._custom_eq.setVisible(preset == EQ_CUSTOM)
         s = self._session
         def run():
             try: set_eq(s, preset)
+            except Exception: pass
+        self._bg(run)
+
+    def _on_custom_eq_changed(self, bass: int, mid: int, treble: int):
+        s = self._session
+        def run():
+            try: set_custom_eq(s, bass, mid, treble)
             except Exception: pass
         self._bg(run)
 
