@@ -30,6 +30,7 @@ else:
     from cmf_control.bt.session import BTSession
 
 ICON_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "icon.png")
+TRAY_ICON_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "buds_tray.png")
 RED = "#FF1744"
 
 
@@ -161,11 +162,14 @@ def run() -> int:
     icon = QIcon(icon_path) if os.path.exists(icon_path) else _placeholder_icon()
     app.setWindowIcon(icon)
 
+    tray_icon_path = os.path.abspath(TRAY_ICON_PATH)
+    tray_idle_icon = QIcon(tray_icon_path) if os.path.exists(tray_icon_path) else icon
+
     session = BTSession("2C:BE:EE:F0:00:3C")
     window = MainWindow(session)
 
     # System tray
-    tray = QSystemTrayIcon(icon, app)
+    tray = QSystemTrayIcon(tray_idle_icon, app)
     menu = QMenu()
     menu.setStyleSheet("""
         QMenu { background:#0a0a0a; color:#cccccc; border:1px solid #222222;
@@ -334,13 +338,13 @@ def run() -> int:
 
     def on_disconnected():
         battery_action.setText("◌  CONNECTING...")
-        tray.setIcon(icon)
+        tray.setIcon(tray_idle_icon)
         tray.setToolTip("CMF Control — connecting...")
         window.on_disconnected(searching=True)
 
     def on_bt_unavailable():
         battery_action.setText("● NOT CONNECTED")
-        tray.setIcon(icon)
+        tray.setIcon(tray_idle_icon)
         tray.setToolTip("CMF Control — buds not in range")
         window.on_disconnected(searching=False)
 

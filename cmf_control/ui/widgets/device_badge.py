@@ -1,42 +1,65 @@
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
-from PyQt6.QtCore import Qt, QPointF, QRectF
+from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetricsF
+from PyQt6.QtCore import Qt
 
 
 class DeviceBadge(QWidget):
-    """Nothing-authentic earbuds render: filled dark body + white outline + red accent."""
+    """Big dot-matrix 'CMF' typographic mark, Nothing-authentic."""
 
-    def __init__(self, parent=None):
+    def __init__(self, size: int = 96, parent=None):
         super().__init__(parent)
-        self.setFixedSize(64, 64)
+        self._size = size
+        self.setFixedSize(size, size)
 
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        s = self._size
 
-        outline = QPen(QColor("#ffffff"))
-        outline.setWidthF(1.8)
-        outline.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        outline.setCapStyle(Qt.PenCapStyle.RoundCap)
+        # Dot grid background box
+        p.setBrush(QColor("#0f0f0f"))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(0, 0, s, s, 10, 10)
 
-        for cx in (18, 46):  # left bud, right bud
-            # Bud head
-            p.setPen(outline)
-            p.setBrush(QBrush(QColor("#1a1a1a")))
-            p.drawEllipse(QPointF(cx, 24), 11, 15)
-            # Driver circle
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(QColor("#ffffff")))
-            p.drawEllipse(QPointF(cx, 24), 4, 4)
-            p.setBrush(QBrush(QColor("#0a0a0a")))
-            p.drawEllipse(QPointF(cx, 24), 2.2, 2.2)
-            # Stem
-            p.setPen(outline)
-            p.setBrush(QBrush(QColor("#1a1a1a")))
-            p.drawRoundedRect(QRectF(cx - 3.5, 38, 7, 16), 3, 3)
-            # Red Nothing-accent dot at stem bottom
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(QColor("#FF1744")))
-            p.drawEllipse(QPointF(cx, 50), 1.3, 1.3)
+        # Dot matrix pattern inside
+        p.setBrush(QColor("#1f1f1f"))
+        step = max(6, s // 14)
+        for x in range(step // 2, s, step):
+            for y in range(step // 2, s, step):
+                p.drawEllipse(x - 1, y - 1, 2, 2)
+
+        # Red accent dot top-left
+        p.setBrush(QColor("#FF1744"))
+        p.drawEllipse(10, 10, 5, 5)
+
+        # Big "CMF" letters
+        p.setPen(QColor("#ffffff"))
+        font = QFont("Space Mono", int(s * 0.28))
+        font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, s * 0.02)
+        p.setFont(font)
+        fm = QFontMetricsF(font)
+        text = "CMF"
+        text_w = fm.horizontalAdvance(text)
+        text_h = fm.ascent()
+        p.drawText(
+            int((s - text_w) / 2),
+            int((s + text_h) / 2 - fm.descent() * 0.3),
+            text,
+        )
+
+        # "BUDS PRO 2" subtitle
+        p.setPen(QColor("#555555"))
+        sub_font = QFont("Space Mono", int(s * 0.085))
+        sub_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1)
+        p.setFont(sub_font)
+        sub_fm = QFontMetricsF(sub_font)
+        sub = "BUDS PRO 2"
+        sub_w = sub_fm.horizontalAdvance(sub)
+        p.drawText(
+            int((s - sub_w) / 2),
+            int(s - 12),
+            sub,
+        )
 
         p.end()

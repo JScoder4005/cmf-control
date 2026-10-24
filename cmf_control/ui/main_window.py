@@ -14,7 +14,8 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QStatusBar, QScrollArea
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize
+from PyQt6.QtGui import QPixmap, QPainter, QPainterPath
 from cmf_control.ui.widgets.dot_matrix_background import DotMatrixBackground
 from cmf_control.ui.widgets.battery_bar import BatteryBar
 from cmf_control.ui.widgets.anc_toggle import ANCToggle
@@ -62,6 +63,41 @@ def _section_label(text):
     return lbl
 
 
+def _rounded_pixmap(path: str, size: int, radius: int) -> QPixmap:
+    """Load an image, scale to size×size, and clip to a rounded square."""
+    source = QPixmap(path)
+    if source.isNull():
+        return QPixmap()
+    scaled = source.scaled(
+        size, size,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    out = QPixmap(size, size)
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    path_clip = QPainterPath()
+    path_clip.addRoundedRect(0, 0, size, size, radius, radius)
+    painter.setClipPath(path_clip)
+    offset_x = (scaled.width() - size) // 2
+    offset_y = (scaled.height() - size) // 2
+    painter.drawPixmap(-offset_x, -offset_y, scaled)
+    painter.end()
+    return out
+
+
+def _buds_photo_label(size: int = 92) -> QLabel:
+    img_path = os.path.join(os.path.dirname(__file__), "..", "assets", "buds_badge.png")
+    lbl = QLabel()
+    lbl.setFixedSize(QSize(size, size))
+    pix = _rounded_pixmap(img_path, size, radius=10)
+    if not pix.isNull():
+        lbl.setPixmap(pix)
+    lbl.setStyleSheet("background:transparent;")
+    return lbl
+
+
 class MainWindow(QMainWindow):
     battery_updated = pyqtSignal(int, int, int)  # left, right, case
     battery_full_updated = pyqtSignal(object)  # BatteryStatus with charging flags
@@ -74,10 +110,12 @@ class MainWindow(QMainWindow):
         self._low_battery_notified = False
         self._connected = False
         self.setWindowTitle("CMF Control")
-        self.setMinimumWidth(400)
-        self.setMaximumWidth(520)
+        self.setMinimumWidth(440)
+        self.setMaximumWidth(560)
 
-        # Dot matrix as central widget background
+        from cmf_control.ui.widgets.card import Card
+
+        # Background
         bg = DotMatrixBackground()
         bg_layout = QVBoxLayout(bg)
         bg_layout.setContentsMargins(0, 0, 0, 0)
@@ -85,7 +123,7 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background:transparent;")
+        scroll.setStyleSheet("background:transparent; border:none;")
         bg_layout.addWidget(scroll)
 
         self.setCentralWidget(bg)
@@ -94,88 +132,86 @@ class MainWindow(QMainWindow):
         container.setStyleSheet("background:transparent;")
         scroll.setWidget(container)
         root = QVBoxLayout(container)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(18)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(14)
 
-        # Header
-        header = QHBoxLayout()
-        header.setSpacing(14)
+        # ── HEADER CARD: typographic badge on left, status on right
+        header_card = Card()
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
 
-        from cmf_control.ui.widgets.device_badge import DeviceBadge
-        header.addWidget(DeviceBadge())
+        header_row.addWidget(_buds_photo_label(size=92))
 
-        left = QVBoxLayout()
-        left.setSpacing(3)
-        name = QLabel("CMF BUDS PRO 2")
-        name.setStyleSheet("color:#ffffff; font-size:15px; letter-spacing:4px; background:transparent;")
+        name_col = QVBoxLayout()
+        name_col.setSpacing(5)
         brand = QLabel("NOTHING TECHNOLOGY")
-        brand.setStyleSheet("color:#1f1f1f; font-size:9px; letter-spacing:3px; background:transparent;")
-        left.addWidget(name)
-        left.addWidget(brand)
+        brand.setStyleSheet("color:#333333; font-size:9px; letter-spacing:3px; background:transparent;")
+        name_col.addWidget(brand)
 
-        right_col = QVBoxLayout()
-        right_col.setSpacing(3)
-        right_col.setAlignment(Qt.AlignmentFlag.AlignRight)
+        # status chip
+        status_row = QHBoxLayout()
+        status_row.setSpacing(6)
         self._dot = QLabel("●")
-        self._dot.setStyleSheet(f"color:#1a1a1a; font-size:13px; background:transparent;")
-        self._dot.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._dot.setStyleSheet(f"color:#333333; font-size:10px; background:transparent;")
+        self._status_text = QLabel("DISCONNECTED")
+        self._status_text.setStyleSheet("color:#555555; font-size:11px; letter-spacing:2px; background:transparent;")
+        status_row.addWidget(self._dot)
+        status_row.addWidget(self._status_text)
+        status_row.addStretch()
+        name_col.addLayout(status_row)
+
+        # fw + rssi row
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(14)
         self._fw_label = QLabel("")
-        self._fw_label.setStyleSheet("color:#1f1f1f; font-size:9px; letter-spacing:2px; background:transparent;")
-        self._fw_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._fw_label.setStyleSheet("color:#555555; font-size:9px; letter-spacing:2px; background:transparent;")
         self._rssi_label = QLabel("")
-        self._rssi_label.setStyleSheet("color:#1f1f1f; font-size:9px; letter-spacing:2px; background:transparent;")
-        self._rssi_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        right_col.addWidget(self._dot)
-        right_col.addWidget(self._rssi_label)
-        right_col.addWidget(self._fw_label)
+        self._rssi_label.setStyleSheet("color:#555555; font-size:9px; letter-spacing:2px; background:transparent;")
+        meta_row.addWidget(self._fw_label)
+        meta_row.addWidget(self._rssi_label)
+        meta_row.addStretch()
+        name_col.addLayout(meta_row)
 
-        header.addLayout(left)
-        header.addStretch()
-        header.addLayout(right_col)
-        root.addLayout(header)
-        root.addWidget(_sep())
+        name_col.addStretch()
 
-        # Battery
+        header_row.addLayout(name_col, 1)
+        header_card.add_layout(header_row)
+        root.addWidget(header_card)
+
+        # ── BATTERY CARD
+        battery_card = Card("BATTERY")
         self._battery = BatteryBar()
-        root.addWidget(self._battery)
-        root.addWidget(_sep())
+        battery_card.add(self._battery)
+        root.addWidget(battery_card)
 
-        # Now Playing
-        root.addWidget(_section_label("NOW PLAYING"))
+        # ── NOW PLAYING CARD
+        np_card = Card("NOW PLAYING")
         self._now_playing = NowPlayingWidget()
         self._now_playing.play_pause.connect(lambda: mpris.play_pause(self._mpris_state.player if self._mpris_state else None))
         self._now_playing.next_track.connect(lambda: mpris.next_track(self._mpris_state.player if self._mpris_state else None))
         self._now_playing.prev_track.connect(lambda: mpris.prev_track(self._mpris_state.player if self._mpris_state else None))
-        root.addWidget(self._now_playing)
+        np_card.add(self._now_playing)
         self._mpris_state: mpris.NowPlaying | None = None
-        root.addWidget(_sep())
+        root.addWidget(np_card)
 
-        # Battery history graph
-        root.addWidget(_section_label("LAST 24H"))
-        self._graph = BatteryGraph()
-        self._graph.set_points(battery_history.load_last_24h())
-        root.addWidget(self._graph)
-        root.addWidget(_sep())
-
-        # Noise Control
-        root.addWidget(_section_label("NOISE CONTROL"))
+        # ── NOISE CONTROL CARD
+        anc_card = Card("NOISE CONTROL")
         self._anc = ANCToggle()
         self._anc.mode_changed.connect(self._on_anc_changed)
-        root.addWidget(self._anc)
-        root.addWidget(_sep())
+        anc_card.add(self._anc)
+        root.addWidget(anc_card)
 
-        # Sound Profile
-        root.addWidget(_section_label("SOUND PROFILE"))
+        # ── SOUND PROFILE CARD
+        eq_card = Card("SOUND PROFILE")
         self._eq = EQPicker()
         self._eq.preset_changed.connect(self._on_eq_changed)
-        root.addWidget(self._eq)
-        root.addWidget(_sep())
+        eq_card.add(self._eq)
+        root.addWidget(eq_card)
 
-        # Toggle rows
-        root.addWidget(_section_label("SETTINGS"))
+        # ── SETTINGS CARD (toggles)
+        settings_card = Card("SETTINGS")
         toggles = QVBoxLayout()
-        toggles.setSpacing(16)
-        toggles.setContentsMargins(0, 4, 0, 0)
+        toggles.setSpacing(14)
 
         self._game_mode = ToggleSwitch()
         self._spatial = ToggleSwitch()
@@ -196,29 +232,36 @@ class MainWindow(QMainWindow):
             row.addStretch()
             row.addWidget(widget)
             toggles.addLayout(row)
+        settings_card.add_layout(toggles)
+        root.addWidget(settings_card)
 
-        root.addLayout(toggles)
-        root.addWidget(_sep())
-
-        # Bass
-        root.addWidget(_section_label("BASS ENHANCE"))
+        # ── BASS CARD
+        bass_card = Card("BASS ENHANCE")
         self._bass = BassControl()
         self._bass.changed.connect(self._on_bass_changed)
-        root.addWidget(self._bass)
-        root.addWidget(_sep())
+        bass_card.add(self._bass)
+        root.addWidget(bass_card)
 
-        # Sleep timer
-        root.addWidget(_section_label("SLEEP TIMER"))
+        # ── SLEEP TIMER CARD
+        sleep_card = Card("SLEEP TIMER")
         self._sleep = SleepTimer()
         self._sleep.expired.connect(self._on_sleep_expired)
-        root.addWidget(self._sleep)
-        root.addWidget(_sep())
+        sleep_card.add(self._sleep)
+        root.addWidget(sleep_card)
 
-        # Touch Controls
-        root.addWidget(_section_label("TOUCH CONTROLS"))
+        # ── BATTERY HISTORY CARD
+        graph_card = Card("LAST 24H")
+        self._graph = BatteryGraph()
+        self._graph.set_points(battery_history.load_last_24h())
+        graph_card.add(self._graph)
+        root.addWidget(graph_card)
+
+        # ── TOUCH CONTROLS CARD
+        gesture_card = Card("TOUCH CONTROLS")
         self._gestures = GestureMap()
         self._gestures.gesture_changed.connect(self._on_gesture_changed)
-        root.addWidget(self._gestures)
+        gesture_card.add(self._gestures)
+        root.addWidget(gesture_card)
 
         root.addStretch()
 
@@ -251,13 +294,15 @@ class MainWindow(QMainWindow):
 
     def _pulse_dot(self):
         c = self._dot_colors[self._dot_idx % len(self._dot_colors)]
-        self._dot.setStyleSheet(f"color:{c}; font-size:13px; background:transparent;")
+        self._dot.setStyleSheet(f"color:{c}; font-size:10px; background:transparent;")
         self._dot_idx += 1
 
     def on_connected(self):
         self._connected = True
         self._dot_timer.stop()
-        self._dot.setStyleSheet(f"color:{GREEN}; font-size:13px; background:transparent;")
+        self._dot.setStyleSheet(f"color:{GREEN}; font-size:10px; background:transparent;")
+        self._status_text.setText("CONNECTED")
+        self._status_text.setStyleSheet(f"color:{GREEN}; font-size:10px; letter-spacing:2px; background:transparent;")
         self._status.showMessage("CONNECTED  ·  CMF BUDS PRO 2")
         self._fw_label.setText("FW ...")
         self._rssi_label.setText("...")
@@ -274,6 +319,12 @@ class MainWindow(QMainWindow):
         self._battery.update_status(0, 0, 0)
         self._fw_label.setText("")
         self._rssi_label.setText("")
+        if searching:
+            self._status_text.setText("CONNECTING...")
+            self._status_text.setStyleSheet(f"color:#888888; font-size:10px; letter-spacing:2px; background:transparent;")
+        else:
+            self._status_text.setText("NOT CONNECTED")
+            self._status_text.setStyleSheet("color:#555555; font-size:10px; letter-spacing:2px; background:transparent;")
         self._dot_timer.start(500)
         if searching:
             self._status.showMessage("SEARCHING FOR CMF BUDS PRO 2...")
