@@ -61,12 +61,17 @@ CMF Control is a fully reverse-engineered Linux companion app for the **CMF Buds
 
 ---
 
-## Screenshot
+## Screenshots
 
 <div align="center">
-<img src="assets/screenshot.png" width="420" alt="CMF Control UI"/>
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/main_connected.png" width="320" alt="CMF Control — connected"/><br/><sub><b>Connected</b> — live L / R / case battery, ANC, EQ, toggles, graph</sub></td>
+<td align="center"><img src="docs/screenshots/main_disconnected.png" width="320" alt="CMF Control — disconnected"/><br/><sub><b>Disconnected</b> — placeholder state, auto-reconnects when buds are back</sub></td>
+</tr>
+</table>
 
-*Nothing-authentic UI — dot matrix background, red dot accent*
+*Nothing-authentic UI — dot matrix background, red dot accent, product shot in the header*
 </div>
 
 ---
