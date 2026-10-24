@@ -58,13 +58,19 @@ ANC_VAL_SMART_2        = 0x04
 ANC_VAL_SMART_1        = 0x04
 ANC_VAL_COMFORTABLE    = 0x05
 
-# EQ presets — verified from wi/v.java onUpdate() case 49183 (=0xC01F)
-# Payload: single int (0-5)
-EQ_BALANCED      = 0   # "sound_balanced"
-EQ_MORE_VOICE    = 1   # "sound_more_voice"
-EQ_MORE_TREBLE   = 2   # "sound_more_treble"
-EQ_MORE_BASS     = 3   # "sound_more_bass"
-EQ_CUSTOM        = 5   # "sound_eq_custom"
+# EQ presets (listening mode, set via 0xF01D) — CMF Buds Pro 2 indices per
+# BudsLink CMFBudsPro2.js eqPreset: 0 Dirac/Balanced, 1 Rock, 2 Electronic,
+# 3 Pop, 4 Enhance Vocals, 5 Classical, 6 Custom.
+# (Older names below came from a different model's EQ_GET table; kept as aliases.)
+EQ_BALANCED      = 0
+EQ_MORE_VOICE    = 1
+EQ_MORE_TREBLE   = 2
+EQ_MORE_BASS     = 3
+EQ_CUSTOM        = 6
+
+# Custom 3-band EQ gains — BudsLink nothingBudsConfig.js CUSTOM_EQ_*
+CMD_CUSTOM_EQ_GET = 0xC044  # response/notify 0x4044
+CMD_CUSTOM_EQ_SET = 0xF041
 
 # Battery payload — DeviceBattery.java
 # SparseArray keyed by: 1=watch, 2=left, 3=right, 4=case, 5=tws, 6=stereo

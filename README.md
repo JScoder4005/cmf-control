@@ -44,7 +44,8 @@ CMF Control is a fully reverse-engineered Linux companion app for the **CMF Buds
 · FIRMWARE VERSION ·········· Read live from device, shown in header
 · SIGNAL STRENGTH ············ RSSI bars + dBm, polled every 10s
 · NOISE CONTROL ············· Off / Transparency / Light / Medium / Max ANC
-· SOUND PROFILE ············· Balanced / Rock / Electronic / Pop / Enhance Vocals / Classical
+· SOUND PROFILE ············· Balanced / Rock / Electronic / Pop / Enhance Vocals / Classical / Custom
+· CUSTOM EQ ················· Bass / mid / treble, ±6 dB — stored on the buds, follows them to your phone
 · GAME MODE ················· Low-latency toggle
 · SPATIAL AUDIO ············· Toggle on/off
 · IN-EAR DETECTION ·········· Auto-pause when removed
@@ -94,6 +95,7 @@ Key discoveries:
 - Response cmd = request cmd with **bit 15 cleared** (`0xC007` → `0x4007`)
 - CRC in device responses doesn't match standard CRC-16/ARC — skipped (BudsLink does the same)
 - EQ on CMF Buds Pro 2 uses `LISTENING_MODE_SET=0xF01D`, not `EQ_SET=0xF010`
+- Custom EQ = listening mode `0x06`; band gains via `0xF041` (set) / `0xC044` (get) as float32 LE, order mid/treble/bass
 
 UUID: `aeac4a03-dff5-498f-843a-34487cf133eb`
 

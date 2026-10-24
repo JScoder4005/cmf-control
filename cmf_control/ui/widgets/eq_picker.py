@@ -33,19 +33,24 @@ class EQPicker(QWidget):
             btn.setCheckable(True)
             btn.clicked.connect(lambda checked, p=preset: self._on_click(p))
 
+            # A lone item on the last row (CUSTOM) spans the full width
+            last_row = (len(items) - 1) // cols
+            span = cols if (row == last_row and len(items) % cols == 1) else 1
+            end_col = col + span - 1
+
             # Border radius for corners
             tl = "4px" if (row == 0 and col == 0) else "0"
-            tr = "4px" if (row == 0 and col == cols - 1) else "0"
-            bl = "4px" if (row == len(items) // cols and col == 0) else "0"
-            br = "4px" if (row == len(items) // cols and col == cols - 1) else "0"
+            tr = "4px" if (row == 0 and end_col == cols - 1) else "0"
+            bl = "4px" if (row == last_row and col == 0) else "0"
+            br = "4px" if (row == last_row and end_col == cols - 1) else "0"
             extra = f"border-radius:{tl} {tr} {br} {bl};"
-            if col < cols - 1:
+            if end_col < cols - 1:
                 extra += "border-right:none;"
             if row > 0:
                 extra += "border-top:none;"
 
             btn.setStyleSheet(BTN_STYLE.format(extra=extra))
-            layout.addWidget(btn, row, col)
+            layout.addWidget(btn, row, col, 1, span)
             self._buttons[preset] = btn
 
     def _on_click(self, preset: int):
