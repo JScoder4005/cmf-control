@@ -105,6 +105,33 @@ UUID: `aeac4a03-dff5-498f-843a-34487cf133eb`
 
 ## Installation
 
+### Option A — `.deb` from the latest release (recommended)
+
+```bash
+# 1. Download the latest .deb
+curl -L -o cmf-control.deb \
+  "$(curl -s https://api.github.com/repos/JScoder4005/cmf-control/releases/latest \
+     | grep browser_download_url | grep '_all.deb' | cut -d\" -f4)"
+
+# 2. Install (pulls Python, PyQt6, BlueZ etc. via apt)
+sudo apt install ./cmf-control.deb
+
+# 3. Allow the app to auto-recover from Bluetooth registration errors
+echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bluetooth" \
+  | sudo tee /etc/sudoers.d/cmf-bluetooth && sudo chmod 440 /etc/sudoers.d/cmf-bluetooth
+
+# 4. Pair buds first (if not already paired)
+bluetoothctl
+> scan on
+> pair 2C:BE:EE:F0:00:3C
+> trust 2C:BE:EE:F0:00:3C
+> exit
+```
+
+Launch from GNOME Activities → "CMF Control", or from a terminal with `cmf-control`.
+
+### Option B — From source
+
 ```bash
 # 1. Install system dependencies
 sudo apt install python3-dbus python3-gi python3-pyqt6 playerctl
@@ -126,6 +153,14 @@ bluetoothctl
 > pair 2C:BE:EE:F0:00:3C
 > trust 2C:BE:EE:F0:00:3C
 > exit
+```
+
+### Option C — Build the `.deb` yourself
+
+```bash
+sudo apt install dpkg-dev
+bash tools/build-deb.sh                 # or: tools/build-deb.sh 0.2.0
+sudo apt install ./dist/cmf-control_*_all.deb
 ```
 
 ---

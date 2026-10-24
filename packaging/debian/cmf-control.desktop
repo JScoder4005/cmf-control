@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=CMF Control
+GenericName=CMF Buds Pro 2 Companion
+Comment=Linux companion app for CMF Buds Pro 2 earbuds
+Exec=cmf-control
+Icon=cmf-control
+Terminal=false
+Categories=AudioVideo;Audio;Settings;HardwareSettings;
+StartupNotify=true
+StartupWMClass=cmf-control
+Keywords=bluetooth;earbuds;cmf;nothing;anc;eq;

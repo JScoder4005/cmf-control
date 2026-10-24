@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (without leading v). Defaults to pyproject.toml.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev lintian
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+              v="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              v="${GITHUB_REF_NAME#v}"
+          else
+              v="$(python3 -c "import tomllib;print(tomllib.loads(open('pyproject.toml','rb').read().decode())['project']['version'])")"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "deb=dist/cmf-control_${v}_all.deb" >> "$GITHUB_OUTPUT"
+          echo "Building version $v"
+
+      - name: Build .deb
+        run: bash tools/build-deb.sh "${{ steps.v.outputs.version }}"
+
+      - name: Lintian (non-blocking)
+        run: lintian --no-tag-display-limit "${{ steps.v.outputs.deb }}" || true
+
+      - name: Smoke test — install into container-ish temp dir
+        run: |
+          mkdir -p /tmp/debtest
+          dpkg-deb -x "${{ steps.v.outputs.deb }}" /tmp/debtest
+          test -x /tmp/debtest/usr/bin/cmf-control
+          test -f /tmp/debtest/usr/lib/python3/dist-packages/cmf_control/main.py
+          test -f /tmp/debtest/usr/share/applications/cmf-control.desktop
+          test -f /tmp/debtest/usr/share/icons/hicolor/256x256/apps/cmf-control.png
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmf-control-deb
+          path: ${{ steps.v.outputs.deb }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.v.outputs.deb }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          name: cmf-control ${{ github.ref_name }}

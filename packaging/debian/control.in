@@ -1,0 +1,15 @@
+Package: cmf-control
+Version: @VERSION@
+Section: sound
+Priority: optional
+Architecture: all
+Maintainer: JScoder4005 <muk4005@gmail.com>
+Depends: python3 (>= 3.11), python3-pyqt6, python3-gi, python3-dbus, bluez
+Recommends: playerctl, libqt6imageformats6
+Description: Linux companion app for CMF Buds Pro 2
+ Native Linux desktop app to control the CMF Buds Pro 2 earbuds:
+ battery, noise control, EQ, touch gestures, in-ear detection,
+ bass enhancement, sleep timer, RSSI, firmware info, system tray
+ and MPRIS now-playing — all over a reverse-engineered RFCOMM
+ protocol via BlueZ.
+Homepage: https://github.com/JScoder4005/cmf-control
