@@ -14,8 +14,8 @@
 
 **Your CMF Buds Pro 2 deserve better than Windows.**
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-white?style=flat-square&logo=python&logoColor=black&labelColor=white)](https://python.org)
-[![Platform](https://img.shields.io/badge/Platform-Linux-black?style=flat-square&logo=linux&logoColor=white)](https://kernel.org)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-white?style=flat-square&logo=python&logoColor=black&labelColor=white)](https://python.org)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-black?style=flat-square&logo=linux&logoColor=white)](https://kernel.org)
 [![License](https://img.shields.io/badge/License-MIT-white?style=flat-square&labelColor=black)](LICENSE)
 [![PyQt6](https://img.shields.io/badge/UI-PyQt6-41CD52?style=flat-square&labelColor=black)](https://pypi.org/project/PyQt6/)
 [![Bluetooth](https://img.shields.io/badge/Bluetooth-RFCOMM-0082FC?style=flat-square&labelColor=black)](https://bluez.org)
@@ -51,6 +51,8 @@ CMF Control is a fully reverse-engineered Linux companion app for the **CMF Buds
 · IN-EAR DETECTION ·········· Auto-pause when removed
 · BASS ENHANCE ·············· Enable + 5-level slider
 · SLEEP TIMER ··············· 10/20/30/45/60m presets, pauses all MPRIS players
+· NOW PLAYING ··············· Live MPRIS track + artwork widget, no polling
+· NOTIFICATIONS ············· Native banners via notify-send / macOS
 · TOUCH CONTROLS ············ Remap double tap / triple tap / hold per earbud
 · SYSTEM TRAY ··············· Lives in taskbar, always ready
 · AUTO-CONNECT ·············· Detects buds when in range, no manual steps
@@ -104,7 +106,7 @@ UUID: `aeac4a03-dff5-498f-843a-34487cf133eb`
 ## Requirements
 
 - Ubuntu / Debian Linux (tested on Ubuntu 24.04)
-- System Python `/usr/bin/python3` — **not pyenv, not venv**
+- System Python 3.11+ at `/usr/bin/python3` — **not pyenv, not venv**
 - BlueZ (`bluetoothd`)
 - `python3-dbus`, `python3-gi`, `python3-pyqt6`
 
@@ -200,6 +202,17 @@ Must launch via the `.app` bundle (`open`), not bare `python -m cmf_control.main
 
 ---
 
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
+
+CI runs the test suite on Ubuntu and macOS for every push and PR. Pushing a `v*` tag builds the `.deb` and publishes a GitHub release.
+
+---
+
 ## Known Limitations
 
 - Gesture remapping commands send successfully but real-device verification is ongoing
@@ -215,9 +228,8 @@ Built by one person reverse engineering in spare time. Help wanted:
 
 - Verify gesture remapping on your device
 - Test on other Nothing/CMF earbuds
-- Add firmware version display
-- Add "Find My Buds" ring feature  
-- Package as `.deb`
+- Add "Find My Buds" ring feature
+- Test the macOS build on more hardware
 
 PRs welcome. Open an issue if something's broken.
 
