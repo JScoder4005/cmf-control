@@ -7,9 +7,12 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
