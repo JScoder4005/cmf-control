@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cmf-control"
-version = "0.1.0"
+version = "0.2.0"
 description = "Linux desktop app to control CMF Buds Pro 2 earbuds"
 license = {text = "MIT"}
 requires-python = ">=3.11"
